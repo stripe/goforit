@@ -1,0 +1,13 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "biUnej3E0C1imptH5QX+JtTbyoM=",
+			"path": "github.com/stretchr/testify/assert",
+			"revision": "93d48b7c2c32ab54ac6639d7edb7381b2bf95250",
+			"revisionTime": "2016-09-22T21:16:32Z"
+		}
+	],
+	"rootPath": "github.com/stripe/goforit"
+}
