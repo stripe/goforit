@@ -8,7 +8,17 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/DataDog/datadog-go/statsd"
 )
+
+const statsdAddress = "127.0.0.1:8200"
+
+var stats *statsd.Client
+
+func init() {
+	stats, _ = statsd.New(statsdAddress)
+}
 
 const DefaultInterval = 30 * time.Second
 
@@ -134,17 +144,20 @@ func RefreshFlags(backend Backend) error {
 // Init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
 // When the Ticker returned by Init is closed, updates will stop.
-func Init(interval time.Duration, backend Backend) (*time.Ticker, error) {
+func Init(interval time.Duration, backend Backend) *time.Ticker {
 	ticker := time.NewTicker(interval)
 	err := RefreshFlags(backend)
 	if err != nil {
-		ticker.Stop()
-		return nil, err
+		stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 	}
 	go func() {
 		for _ = range ticker.C {
-			RefreshFlags(backend)
+			err := RefreshFlags(backend)
+			if err != nil {
+				stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+			}
+
 		}
 	}()
-	return ticker, nil
+	return ticker
 }

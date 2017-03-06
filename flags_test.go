@@ -70,8 +70,7 @@ func TestEnabled(t *testing.T) {
 
 	Reset()
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker, err := Init(DefaultInterval, backend)
-	assert.NoError(t, err)
+	ticker := Init(DefaultInterval, backend)
 	defer ticker.Stop()
 
 	assert.False(t, Enabled("go.sun.money"))
@@ -120,8 +119,7 @@ func TestRefresh(t *testing.T) {
 	assert.False(t, Enabled("go.sun.money"))
 	assert.False(t, Enabled("go.moon.mercury"))
 
-	ticker, err := Init(10*time.Millisecond, backend)
-	assert.NoError(t, err)
+	ticker := Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
 
 	// ensure refresh runs twice to avoid race conditions
@@ -153,8 +151,7 @@ func TestMultipleDefinitions(t *testing.T) {
 func BenchmarkEnabled(b *testing.B) {
 	Reset()
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker, err := Init(DefaultInterval, backend)
-	assert.NoError(b, err)
+	ticker := Init(DefaultInterval, backend)
 	defer ticker.Stop()
 
 	b.ResetTimer()
