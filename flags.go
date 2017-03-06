@@ -99,6 +99,8 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, error) {
 
 // BackendFromFile is a helper function that creates a valid
 // FlagBackend from a CSV file containing the feature flag values.
+// If the same flag is defined multiple times in the same file,
+// the last result will be used.
 func BackendFromFile(filename string) Backend {
 	return fileBackend{filename}
 }
