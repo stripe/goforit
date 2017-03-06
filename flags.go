@@ -134,13 +134,17 @@ func RefreshFlags(backend Backend) error {
 // Init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
 // When the Ticker returned by Init is closed, updates will stop.
-func Init(interval time.Duration, backend Backend) *time.Ticker {
+func Init(interval time.Duration, backend Backend) (*time.Ticker, error) {
 	ticker := time.NewTicker(interval)
-	RefreshFlags(backend)
+	err := RefreshFlags(backend)
+	if err != nil {
+		ticker.Stop()
+		return nil, err
+	}
 	go func() {
 		for _ = range ticker.C {
 			RefreshFlags(backend)
 		}
 	}()
-	return ticker
+	return ticker, nil
 }
