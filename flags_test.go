@@ -131,6 +131,18 @@ func TestRefresh(t *testing.T) {
 
 	assert.False(t, Enabled("go.sun.money"))
 	assert.True(t, Enabled("go.moon.mercury"))
+}
+
+func TestMultipleDefinitions(t *testing.T) {
+	const repeatedFlag = "go.sun.money"
+	const lastValue = 0.7
+	Reset()
+
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
+	RefreshFlags(backend)
+
+	flag := flags[repeatedFlag]
+	assert.Equal(t, flag, Flag{repeatedFlag, lastValue})
 
 }
 
