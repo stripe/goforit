@@ -2,6 +2,7 @@ package goforit
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -53,22 +54,32 @@ var flagsMtx = sync.RWMutex{}
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(name string) bool {
+func Enabled(name string) (enabled bool) {
+	defer func() {
+		var gauge float64
+		if enabled {
+			gauge = 1
+		}
+		stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
+	}()
 
 	flagsMtx.RLock()
 	defer flagsMtx.RUnlock()
 
 	if flags == nil {
-		return false
+		enabled = false
+		return
 	}
 	flag := flags[name]
 
 	// equality should be strict
 	// because Float64() can return 0
 	if f := Rand.Float64(); f < flag.Rate {
-		return true
+		enabled = true
+		return
 	}
-	return false
+	enabled = false
+	return
 }
 
 func flagsToMap(flags []Flag) map[string]Flag {
