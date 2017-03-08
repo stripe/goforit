@@ -34,8 +34,13 @@ type fileBackend struct {
 }
 
 func (b fileBackend) Refresh() (map[string]Flag, error) {
+	var checkStatus statsd.ServiceCheckStatus
+	defer func() {
+		stats.SimpleServiceCheck("goforit.refreshFlags.fileBackend.present", checkStatus)
+	}()
 	f, err := os.Open(b.filename)
 	if err != nil {
+		checkStatus = statsd.Warn
 		return nil, err
 	}
 	defer f.Close()
@@ -156,18 +161,19 @@ func RefreshFlags(backend Backend) error {
 // to update the internal cache of flags periodically, at the specified interval.
 // When the Ticker returned by Init is closed, updates will stop.
 func Init(interval time.Duration, backend Backend) *time.Ticker {
+
 	ticker := time.NewTicker(interval)
 	err := RefreshFlags(backend)
 	if err != nil {
 		stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 	}
+
 	go func() {
 		for _ = range ticker.C {
 			err := RefreshFlags(backend)
 			if err != nil {
 				stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 			}
-
 		}
 	}()
 	return ticker
