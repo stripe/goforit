@@ -2,13 +2,24 @@ package goforit
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/DataDog/datadog-go/statsd"
 )
+
+const statsdAddress = "127.0.0.1:8200"
+
+var stats *statsd.Client
+
+func init() {
+	stats, _ = statsd.New(statsdAddress)
+}
 
 const DefaultInterval = 30 * time.Second
 
@@ -23,8 +34,13 @@ type fileBackend struct {
 }
 
 func (b fileBackend) Refresh() (map[string]Flag, error) {
+	var checkStatus statsd.ServiceCheckStatus
+	defer func() {
+		stats.SimpleServiceCheck("goforit.refreshFlags.fileBackend.present", checkStatus)
+	}()
 	f, err := os.Open(b.filename)
 	if err != nil {
+		checkStatus = statsd.Warn
 		return nil, err
 	}
 	defer f.Close()
@@ -43,22 +59,32 @@ var flagsMtx = sync.RWMutex{}
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(name string) bool {
+func Enabled(name string) (enabled bool) {
+	defer func() {
+		var gauge float64
+		if enabled {
+			gauge = 1
+		}
+		stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
+	}()
 
 	flagsMtx.RLock()
 	defer flagsMtx.RUnlock()
 
 	if flags == nil {
-		return false
+		enabled = false
+		return
 	}
 	flag := flags[name]
 
 	// equality should be strict
 	// because Float64() can return 0
 	if f := Rand.Float64(); f < flag.Rate {
-		return true
+		enabled = true
+		return
 	}
-	return false
+	enabled = false
+	return
 }
 
 func flagsToMap(flags []Flag) map[string]Flag {
@@ -135,11 +161,19 @@ func RefreshFlags(backend Backend) error {
 // to update the internal cache of flags periodically, at the specified interval.
 // When the Ticker returned by Init is closed, updates will stop.
 func Init(interval time.Duration, backend Backend) *time.Ticker {
+
 	ticker := time.NewTicker(interval)
-	RefreshFlags(backend)
+	err := RefreshFlags(backend)
+	if err != nil {
+		stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+	}
+
 	go func() {
 		for _ = range ticker.C {
-			RefreshFlags(backend)
+			err := RefreshFlags(backend)
+			if err != nil {
+				stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+			}
 		}
 	}()
 	return ticker
