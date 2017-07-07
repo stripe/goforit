@@ -1,6 +1,7 @@
 package goforit
 
 import (
+	"context"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -73,12 +74,16 @@ func TestEnabled(t *testing.T) {
 	ticker := Init(DefaultInterval, backend)
 	defer ticker.Stop()
 
-	assert.False(t, Enabled("go.sun.money"))
-	assert.True(t, Enabled("go.moon.mercury"))
+	assert.False(t, Enabled(context.Background(), "go.sun.money"))
+	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
+
+	// nil is equivalent to empty context
+	assert.False(t, Enabled(nil, "go.sun.money"))
+	assert.True(t, Enabled(nil, "go.moon.mercury"))
 
 	count := 0
 	for i := 0; i < iterations; i++ {
-		if Enabled("go.stars.money") {
+		if Enabled(context.Background(), "go.stars.money") {
 			count++
 		}
 	}
@@ -116,8 +121,8 @@ func TestRefresh(t *testing.T) {
 	Reset()
 	backend := &dummyBackend{}
 
-	assert.False(t, Enabled("go.sun.money"))
-	assert.False(t, Enabled("go.moon.mercury"))
+	assert.False(t, Enabled(context.Background(), "go.sun.money"))
+	assert.False(t, Enabled(context.Background(), "go.moon.mercury"))
 
 	ticker := Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
@@ -129,8 +134,8 @@ func TestRefresh(t *testing.T) {
 		<-time.After(10 * time.Millisecond)
 	}
 
-	assert.False(t, Enabled("go.sun.money"))
-	assert.True(t, Enabled("go.moon.mercury"))
+	assert.False(t, Enabled(context.Background(), "go.sun.money"))
+	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
 }
 
 func TestMultipleDefinitions(t *testing.T) {
@@ -156,7 +161,7 @@ func BenchmarkEnabled(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = Enabled("go.stars.money")
+		_ = Enabled(context.Background(), "go.stars.money")
 	}
 }
 
@@ -168,4 +173,86 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 	for k, v := range expected {
 		assert.Equal(t, v, actual[k])
 	}
+}
+
+func TestOverride(t *testing.T) {
+	Reset()
+
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	ticker := Init(DefaultInterval, backend)
+	defer ticker.Stop()
+	RefreshFlags(backend)
+
+	// Empty context gets values from backend.
+	assert.False(t, Enabled(context.Background(), "go.sun.money"))
+	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, Enabled(context.Background(), "go.extra"))
+
+	// Nil is equivalent to empty context.
+	assert.False(t, Enabled(nil, "go.sun.money"))
+	assert.True(t, Enabled(nil, "go.moon.mercury"))
+	assert.False(t, Enabled(nil, "go.extra"))
+
+	// Can override to true in context.
+	ctx := context.Background()
+	ctx = Override(ctx, "go.sun.money", true)
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.True(t, Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, Enabled(ctx, "go.extra"))
+
+	// Can override to false.
+	ctx = Override(ctx, "go.moon.mercury", false)
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, Enabled(ctx, "go.extra"))
+
+	// Can override brand new flag.
+	ctx = Override(ctx, "go.extra", true)
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.True(t, Enabled(ctx, "go.extra"))
+
+	// Can override an override.
+	ctx = Override(ctx, "go.extra", false)
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, Enabled(ctx, "go.extra"))
+
+	// Separate contexts don't interfere with each other.
+	// This allows parallel tests that use feature flags.
+	ctx2 := Override(context.Background(), "go.extra", true)
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.False(t, Enabled(ctx2, "go.sun.money"))
+	assert.True(t, Enabled(ctx2, "go.moon.mercury"))
+	assert.True(t, Enabled(ctx2, "go.extra"))
+
+	// Overrides apply to child contexts.
+	child := context.WithValue(ctx, "foo", "bar")
+	assert.True(t, Enabled(child, "go.sun.money"))
+	assert.False(t, Enabled(child, "go.moon.mercury"))
+	assert.False(t, Enabled(child, "go.extra"))
+
+	// Changes to child contexts don't affect parents.
+	child = Override(child, "go.moon.mercury", true)
+	assert.True(t, Enabled(child, "go.sun.money"))
+	assert.True(t, Enabled(child, "go.moon.mercury"))
+	assert.False(t, Enabled(child, "go.extra"))
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, Enabled(ctx, "go.extra"))
+}
+
+func TestOverrideWithoutInit(t *testing.T) {
+	Reset()
+
+	// Everything is false by default.
+	assert.False(t, Enabled(context.Background(), "go.sun.money"))
+	assert.False(t, Enabled(context.Background(), "go.moon.mercury"))
+
+	// Can override.
+	ctx := Override(context.Background(), "go.sun.money", true)
+	assert.True(t, Enabled(ctx, "go.sun.money"))
+	assert.False(t, Enabled(ctx, "go.moon.mercury"))
 }
