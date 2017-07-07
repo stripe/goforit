@@ -1,6 +1,7 @@
 package goforit
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -59,7 +60,7 @@ var flagsMtx = sync.RWMutex{}
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(name string) (enabled bool) {
+func Enabled(ctx context.Context, name string) (enabled bool) {
 	defer func() {
 		var gauge float64
 		if enabled {
@@ -67,6 +68,15 @@ func Enabled(name string) (enabled bool) {
 		}
 		stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
 	}()
+
+	// Check for an override.
+	if ctx != nil {
+		if ov, ok := ctx.Value(overrideContextKey).(overrides); ok {
+			if enabled, ok = ov[name]; ok {
+				return
+			}
+		}
+	}
 
 	flagsMtx.RLock()
 	defer flagsMtx.RUnlock()
@@ -177,4 +187,24 @@ func Init(interval time.Duration, backend Backend) *time.Ticker {
 		}
 	}()
 	return ticker
+}
+
+// A unique context key for overrides
+type overrideContextKeyType struct{}
+
+var overrideContextKey = overrideContextKeyType{}
+
+type overrides map[string]bool
+
+// Override allows overriding the value of a goforit flag within a context.
+// This is mainly useful for tests.
+func Override(ctx context.Context, name string, value bool) context.Context {
+	ov := overrides{}
+	if old, ok := ctx.Value(overrideContextKey).(overrides); ok {
+		for k, v := range old {
+			ov[k] = v
+		}
+	}
+	ov[name] = value
+	return context.WithValue(ctx, overrideContextKey, ov)
 }
