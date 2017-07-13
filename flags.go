@@ -24,8 +24,6 @@ func init() {
 
 const DefaultInterval = 30 * time.Second
 
-var Rand = rand.New(rand.NewSource(time.Now().Unix()))
-
 type Backend interface {
 	Refresh() (map[string]Flag, error)
 }
@@ -89,7 +87,7 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 
 	// equality should be strict
 	// because Float64() can return 0
-	if f := Rand.Float64(); f < flag.Rate {
+	if f := rand.Float64(); f < flag.Rate {
 		enabled = true
 		return
 	}

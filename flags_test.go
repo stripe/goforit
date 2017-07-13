@@ -2,7 +2,6 @@ package goforit
 
 import (
 	"context"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,7 +17,6 @@ const seed = 5194304667978865136
 const ε = .02
 
 func Reset() {
-	Rand = rand.New(rand.NewSource(seed))
 	flags = map[string]Flag{}
 	flagsMtx = sync.RWMutex{}
 }
