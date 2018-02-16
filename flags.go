@@ -33,10 +33,6 @@ type csvFileBackend struct {
 	filename string
 }
 
-type normalFileBackend struct {
-	filename string
-}
-
 type jsonFileBackend struct {
 	filename string
 }
