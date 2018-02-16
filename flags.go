@@ -33,36 +33,34 @@ type csvFileBackend struct {
 	filename string
 }
 
+type normalFileBackend struct {
+	filename string
+}
+
 type jsonFileBackend struct {
 	filename string
 }
 
-func (b jsonFileBackend) Refresh() (map[string]Flag, error) {
+func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, error)) (map[string]Flag, error) {
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		stats.SimpleServiceCheck("goforit.refreshFlags.csvFileBackend.present", checkStatus)
+		stats.SimpleServiceCheck("goforit.refreshFlags." + backend + "FileBackend.present", checkStatus)
 	}()
-	f, err := os.Open(b.filename)
+	f, err := os.Open(file)
 	if err != nil {
 		checkStatus = statsd.Warn
 		return nil, err
 	}
 	defer f.Close()
-	return parseFlagsJSON(f)
+	return parse(f)
+}
+
+func (b jsonFileBackend) Refresh() (map[string]Flag, error) {
+	return readFile(b.filename, "json", parseFlagsJSON)
 }
 
 func (b csvFileBackend) Refresh() (map[string]Flag, error) {
-	var checkStatus statsd.ServiceCheckStatus
-	defer func() {
-		stats.SimpleServiceCheck("goforit.refreshFlags.csvFileBackend.present", checkStatus)
-	}()
-	f, err := os.Open(b.filename)
-	if err != nil {
-		checkStatus = statsd.Warn
-		return nil, err
-	}
-	defer f.Close()
-	return parseFlagsCSV(f)
+	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
 type Flag struct {
@@ -97,7 +95,6 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 
 	flagsMtx.RLock()
 	defer flagsMtx.RUnlock()
-
 	if flags == nil {
 		enabled = false
 		return
