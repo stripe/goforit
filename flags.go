@@ -180,7 +180,6 @@ func RefreshFlags(backend Backend) error {
 
 	refreshedFlags, err := backend.Refresh()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
