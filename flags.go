@@ -64,6 +64,10 @@ type Flag struct {
 	Rate float64
 }
 
+type JSONFormat struct {
+  Flags []Flag `json:"flags"`
+}
+
 var flags = map[string]Flag{}
 var flagsMtx = sync.RWMutex{}
 
@@ -145,12 +149,12 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, error) {
 
 func parseFlagsJSON(r io.Reader) (map[string]Flag, error) {
 	dec := json.NewDecoder(r)
-	var v []Flag
+	var v JSONFormat
 	err := dec.Decode(&v)
 	if err != nil {
 		return nil, err
 	}
-	return flagsToMap(v), nil
+	return flagsToMap(v.Flags), nil
 }
 
 // BackendFromFile is a helper function that creates a valid
@@ -176,6 +180,7 @@ func RefreshFlags(backend Backend) error {
 
 	refreshedFlags, err := backend.Refresh()
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 

@@ -1,10 +1,14 @@
-[
-  {
-    "Name" : "go.sun.mercury",
-    "Rate" : 1.0
-  },
-  {
-    "Name" : "go.stars.money",
-    "Rate" : 0.5
-  }
-]
+{
+  "flags" :
+    [
+      {
+        "Name" : "go.sun.mercury",
+        "Rate" : 1.0
+      },
+      {
+        "Name" : "go.stars.money",
+        "Rate" : 0.5
+      }
+    ],
+  "updated" : 1519164729.622348
+}
