@@ -1,14 +1,9 @@
 {
-  "flags" :
-    [
-      {
-        "Name" : "go.sun.mercury",
-        "Rate" : 1.0
-      },
-      {
-        "Name" : "go.stars.money",
-        "Rate" : 0.5
-      }
-    ],
-  "updated" : 1519164729.622348
+  "flags": [
+    {
+      "Name": "sequins.prevent_download",
+      "Rate": 0
+    }
+  ],
+  "updated": 1519247256.0626957
 }
