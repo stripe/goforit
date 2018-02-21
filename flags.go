@@ -3,6 +3,7 @@ package goforit
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -10,7 +11,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"encoding/json"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -40,7 +40,7 @@ type jsonFileBackend struct {
 func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, error)) (map[string]Flag, error) {
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		stats.SimpleServiceCheck("goforit.refreshFlags." + backend + "FileBackend.present", checkStatus)
+		stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
 	}()
 	f, err := os.Open(file)
 	if err != nil {
@@ -65,7 +65,7 @@ type Flag struct {
 }
 
 type JSONFormat struct {
-  Flags []Flag `json:"flags"`
+	Flags []Flag `json:"flags"`
 }
 
 var flags = map[string]Flag{}
