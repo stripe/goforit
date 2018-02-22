@@ -3,6 +3,7 @@ package goforit
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -28,27 +29,43 @@ type Backend interface {
 	Refresh() (map[string]Flag, error)
 }
 
-type fileBackend struct {
+type csvFileBackend struct {
 	filename string
 }
 
-func (b fileBackend) Refresh() (map[string]Flag, error) {
+type jsonFileBackend struct {
+	filename string
+}
+
+func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, error)) (map[string]Flag, error) {
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		stats.SimpleServiceCheck("goforit.refreshFlags.fileBackend.present", checkStatus)
+		stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
 	}()
-	f, err := os.Open(b.filename)
+	f, err := os.Open(file)
 	if err != nil {
 		checkStatus = statsd.Warn
 		return nil, err
 	}
 	defer f.Close()
-	return parseFlagsCSV(f)
+	return parse(f)
+}
+
+func (b jsonFileBackend) Refresh() (map[string]Flag, error) {
+	return readFile(b.filename, "json", parseFlagsJSON)
+}
+
+func (b csvFileBackend) Refresh() (map[string]Flag, error) {
+	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
 type Flag struct {
 	Name string
 	Rate float64
+}
+
+type JSONFormat struct {
+	Flags []Flag `json:"flags"`
 }
 
 var flags = map[string]Flag{}
@@ -78,7 +95,6 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 
 	flagsMtx.RLock()
 	defer flagsMtx.RUnlock()
-
 	if flags == nil {
 		enabled = false
 		return
@@ -131,12 +147,28 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, error) {
 	return flags, nil
 }
 
+func parseFlagsJSON(r io.Reader) (map[string]Flag, error) {
+	dec := json.NewDecoder(r)
+	var v JSONFormat
+	err := dec.Decode(&v)
+	if err != nil {
+		return nil, err
+	}
+	return flagsToMap(v.Flags), nil
+}
+
 // BackendFromFile is a helper function that creates a valid
 // FlagBackend from a CSV file containing the feature flag values.
 // If the same flag is defined multiple times in the same file,
 // the last result will be used.
 func BackendFromFile(filename string) Backend {
-	return fileBackend{filename}
+	return csvFileBackend{filename}
+}
+
+// BackendFromJSONFile creates a backend powered by JSON file
+// instead of CSV
+func BackendFromJSONFile(filename string) Backend {
+	return jsonFileBackend{filename}
 }
 
 // RefreshFlags will use the provided thunk function to

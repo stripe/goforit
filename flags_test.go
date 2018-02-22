@@ -64,6 +64,41 @@ func TestParseFlagsCSV(t *testing.T) {
 	}
 }
 
+func TestParseFlagsJSON(t *testing.T) {
+	filename := filepath.Join("fixtures", "flags_example.json")
+
+	type testcase struct {
+		Name     string
+		Filename string
+		Expected []Flag
+	}
+
+	cases := []testcase{
+		{
+			Name:     "BasicExample",
+			Filename: filepath.Join("fixtures", "flags_example.json"),
+			Expected: []Flag{
+				{
+					"sequins.prevent_download",
+					0,
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			f, err := os.Open(filename)
+			assert.NoError(t, err)
+			defer f.Close()
+
+			flags, err := parseFlagsJSON(f)
+
+			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
+		})
+	}
+}
+
 func TestEnabled(t *testing.T) {
 	const iterations = 100000
 
