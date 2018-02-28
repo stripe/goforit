@@ -2,13 +2,18 @@ package goforit
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // arbitrary but fixed for reproducible testing
@@ -19,6 +24,7 @@ const ε = .02
 func Reset() {
 	flags = map[string]Flag{}
 	flagsMtx = sync.RWMutex{}
+	stats, _ = statsd.New(statsdAddress)
 }
 
 func TestParseFlagsCSV(t *testing.T) {
@@ -57,7 +63,7 @@ func TestParseFlagsCSV(t *testing.T) {
 			assert.NoError(t, err)
 			defer f.Close()
 
-			flags, err := parseFlagsCSV(f)
+			flags, _, err := parseFlagsCSV(f)
 
 			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
 		})
@@ -92,7 +98,7 @@ func TestParseFlagsJSON(t *testing.T) {
 			assert.NoError(t, err)
 			defer f.Close()
 
-			flags, err := parseFlagsJSON(f)
+			flags, _, err := parseFlagsJSON(f)
 
 			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
 		})
@@ -133,18 +139,18 @@ type dummyBackend struct {
 	refreshedCount int
 }
 
-func (b *dummyBackend) Refresh() (map[string]Flag, error) {
+func (b *dummyBackend) Refresh() (map[string]Flag, time.Time, error) {
 	defer func() {
 		b.refreshedCount++
 	}()
 
 	if b.refreshedCount == 0 {
-		return map[string]Flag{}, nil
+		return map[string]Flag{}, time.Time{}, nil
 	}
 
 	f, err := os.Open(filepath.Join("fixtures", "flags_example.csv"))
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	defer f.Close()
 	return parseFlagsCSV(f)
@@ -288,4 +294,145 @@ func TestOverrideWithoutInit(t *testing.T) {
 	ctx := Override(context.Background(), "go.sun.money", true)
 	assert.True(t, Enabled(ctx, "go.sun.money"))
 	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+}
+
+type mockHistogramClient struct {
+	*statsd.Client
+	targetName      string
+	histogramValues []float64
+	lock            sync.RWMutex
+}
+
+func (m *mockHistogramClient) Histogram(name string, value float64, tags []string, rate float64) error {
+	if m.targetName == name {
+		m.lock.Lock()
+		defer m.lock.Unlock()
+		m.histogramValues = append(m.histogramValues, value)
+	}
+	return nil
+}
+
+func writeMockJSONFile(t *testing.T, path string, updatedPeriod time.Duration) {
+	flags := []Flag{{"go.sun.money", 1.0}}
+	updatedTime := time.Now().Add(updatedPeriod)
+	flagsJson := &JSONFormat{flags, float64(updatedTime.Unix())}
+
+	jsonData, err := json.Marshal(flagsJson)
+	require.NoError(t, err)
+
+	tmp, err := ioutil.TempFile(filepath.Dir(path), "flags-temp-")
+	require.NoError(t, err)
+	defer os.Remove(tmp.Name())
+	_, err = tmp.Write(jsonData)
+	require.NoError(t, err)
+	tmp.Close()
+
+	err = os.Rename(tmp.Name(), path)
+	require.NoError(t, err)
+}
+
+type dummyAgeBackend struct {
+	t   time.Time
+	mtx sync.RWMutex
+}
+
+func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
+	b.mtx.RLock()
+	defer b.mtx.RUnlock()
+	return map[string]Flag{}, b.t, nil
+}
+
+// Test to see proper monitoring of age of the flags dump
+func TestCacheFileMetric(t *testing.T) {
+	Reset()
+	mockStats := &mockHistogramClient{stats.(*statsd.Client), "goforit.flags.cache_file_age_s", []float64{}, sync.RWMutex{}}
+	stats = mockStats
+
+	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
+	ticker := Init(10*time.Millisecond, backend)
+	defer ticker.Stop()
+
+	time.Sleep(50 * time.Millisecond)
+	func() {
+		backend.mtx.Lock()
+		defer backend.mtx.Unlock()
+		backend.t = time.Now()
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	mockStats.lock.RLock()
+	defer mockStats.lock.RUnlock()
+
+	// We expect something like: [600, 600.01, ..., 0.0, 0.01, ...]
+	last := math.Inf(-1)
+	old := 0
+	recent := 0
+	for _, v := range mockStats.histogramValues {
+		if v > 300 {
+			// Should be older than last time
+			assert.True(t, v > last)
+			// Should be about 10 minutes
+			assert.InDelta(t, 600, v, 3)
+			old++
+			assert.Zero(t, recent, "Should never go from new -> old")
+		} else {
+			// Should be older (unless we just wrote the file)
+			if recent > 0 {
+				assert.True(t, v > last)
+			}
+			// Should be about zero
+			assert.InDelta(t, 0, v, 3)
+			recent++
+		}
+		last = v
+	}
+	assert.True(t, old > 2)
+	assert.True(t, recent > 2)
+}
+
+// Test to see proper monitoring of refreshing the flags dump file from disc
+func TestRefreshCycleMetric(t *testing.T) {
+	Reset()
+	mockStats := &mockHistogramClient{stats.(*statsd.Client), "goforit.flags.last_refresh_s", []float64{}, sync.RWMutex{}}
+	stats = mockStats
+	ctx := context.Background()
+
+	backend := &dummyBackend{}
+	ticker := Init(10*time.Millisecond, backend)
+	defer ticker.Stop()
+
+	for i := 0; i < 10; i++ {
+		Enabled(ctx, "go.sun.money")
+		time.Sleep(3 * time.Millisecond)
+	}
+
+	// want to stop ticker to simulate Refresh() hanging
+	ticker.Stop()
+
+	for i := 0; i < 10; i++ {
+		Enabled(ctx, "go.sun.money")
+		time.Sleep(3 * time.Millisecond)
+	}
+
+	mockStats.lock.RLock()
+	defer mockStats.lock.RUnlock()
+
+	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
+	for i := 0; i < 10; i++ {
+		v := mockStats.histogramValues[i]
+		// Should be ~< 10ms
+		assert.InDelta(t, 0.005, v, 0.010)
+	}
+
+	last := math.Inf(-1)
+	large := 0
+	for i := 10; i < 20; i++ {
+		v := mockStats.histogramValues[i]
+		assert.True(t, v > last)
+		last = v
+		if v > 0.012 {
+			large++
+		}
+	}
+	assert.True(t, large > 2)
 }
