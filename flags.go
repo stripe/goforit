@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"os"
 	"strconv"
@@ -17,7 +18,20 @@ import (
 
 const statsdAddress = "127.0.0.1:8200"
 
-var stats *statsd.Client
+const lastAssertInterval = 60 * time.Second
+
+// An interface reflecting the parts of statsd that we need, so we can mock it
+type statsdClient interface {
+	Histogram(string, float64, []string, float64) error
+	Gauge(string, float64, []string, float64) error
+	Count(string, int64, []string, float64) error
+	SimpleServiceCheck(string, statsd.ServiceCheckStatus) error
+}
+
+var stats statsdClient
+
+var stalenessThreshold time.Duration = 5 * time.Minute
+var stalenessMtx = sync.RWMutex{}
 
 func init() {
 	stats, _ = statsd.New(statsdAddress)
@@ -26,7 +40,9 @@ func init() {
 const DefaultInterval = 30 * time.Second
 
 type Backend interface {
-	Refresh() (map[string]Flag, error)
+	// Refresh returns a new set of flags.
+	// It also returns the age of these flags, or an empty time if no age is known.
+	Refresh() (map[string]Flag, time.Time, error)
 }
 
 type csvFileBackend struct {
@@ -37,7 +53,7 @@ type jsonFileBackend struct {
 	filename string
 }
 
-func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, error)) (map[string]Flag, error) {
+func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
 		stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
@@ -45,17 +61,18 @@ func readFile(file string, backend string, parse func(io.Reader) (map[string]Fla
 	f, err := os.Open(file)
 	if err != nil {
 		checkStatus = statsd.Warn
-		return nil, err
+		log.Print("[goforit] unable to open backend file:\n", err)
+		return nil, time.Time{}, err
 	}
 	defer f.Close()
 	return parse(f)
 }
 
-func (b jsonFileBackend) Refresh() (map[string]Flag, error) {
+func (b jsonFileBackend) Refresh() (map[string]Flag, time.Time, error) {
 	return readFile(b.filename, "json", parseFlagsJSON)
 }
 
-func (b csvFileBackend) Refresh() (map[string]Flag, error) {
+func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
 	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
@@ -65,11 +82,15 @@ type Flag struct {
 }
 
 type JSONFormat struct {
-	Flags []Flag `json:"flags"`
+	Flags       []Flag  `json:"flags"`
+	UpdatedTime float64 `json:"updated"`
 }
 
 var flags = map[string]Flag{}
 var flagsMtx = sync.RWMutex{}
+
+var lastFlagRefreshTime time.Time
+var lastAssert time.Time
 
 // Enabled returns a boolean indicating
 // whether or not the flag should be considered
@@ -84,6 +105,17 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 		stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
 	}()
 
+	defer func() {
+		flagsMtx.RLock()
+		defer flagsMtx.RUnlock()
+		staleness := time.Since(lastFlagRefreshTime)
+		//histogram of cache process age
+		stats.Histogram("goforit.flags.last_refresh_s", staleness.Seconds(), nil, .01)
+		if staleness > stalenessThreshold && time.Since(lastAssert) > lastAssertInterval {
+			lastAssert = time.Now()
+			log.Printf("[goforit] The Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, stalenessThreshold)
+		}
+	}()
 	// Check for an override.
 	if ctx != nil {
 		if ov, ok := ctx.Value(overrideContextKey).(overrides); ok {
@@ -119,7 +151,7 @@ func flagsToMap(flags []Flag) map[string]Flag {
 	return flagsMap
 }
 
-func parseFlagsCSV(r io.Reader) (map[string]Flag, error) {
+func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 	// every row is guaranteed to have 2 fields
 	const FieldsPerRecord = 2
 
@@ -129,7 +161,8 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, error) {
 
 	rows, err := cr.ReadAll()
 	if err != nil {
-		return nil, err
+		log.Print("[goforit] error parsing CSV file:\n", err)
+		return nil, time.Time{}, err
 	}
 
 	flags := map[string]Flag{}
@@ -144,17 +177,18 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, error) {
 
 		flags[name] = Flag{Name: name, Rate: rate}
 	}
-	return flags, nil
+	return flags, time.Time{}, nil
 }
 
-func parseFlagsJSON(r io.Reader) (map[string]Flag, error) {
+func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
 	dec := json.NewDecoder(r)
 	var v JSONFormat
 	err := dec.Decode(&v)
 	if err != nil {
-		return nil, err
+		log.Print("[goforit] error parsing JSON file:\n", err)
+		return nil, time.Time{}, err
 	}
-	return flagsToMap(v.Flags), nil
+	return flagsToMap(v.Flags), time.Unix(int64(v.UpdatedTime), 0), nil
 }
 
 // BackendFromFile is a helper function that creates a valid
@@ -178,7 +212,7 @@ func BackendFromJSONFile(filename string) Backend {
 // Consul key/value storage.
 func RefreshFlags(backend Backend) error {
 
-	refreshedFlags, err := backend.Refresh()
+	refreshedFlags, age, err := backend.Refresh()
 	if err != nil {
 		return err
 	}
@@ -187,14 +221,31 @@ func RefreshFlags(backend Backend) error {
 	for _, flag := range refreshedFlags {
 		fmap[flag.Name] = flag
 	}
-
+	if !age.IsZero() {
+		stalenessMtx.RLock()
+		defer stalenessMtx.RUnlock()
+		staleness := time.Since(age)
+		stale := staleness > stalenessThreshold
+		//histogram of staleness
+		stats.Histogram("goforit.flags.cache_file_age_s", staleness.Seconds(), nil, .1)
+		if stale {
+			log.Printf("[goforit] The backend is stale (%s) past our threshold (%s)", staleness, stalenessThreshold)
+		}
+	}
 	// update the package-level flags
 	// which are protected by the mutex
 	flagsMtx.Lock()
 	flags = fmap
+	lastFlagRefreshTime = time.Now()
 	flagsMtx.Unlock()
 
 	return nil
+}
+
+func SetStalenessThreshold(threshold time.Duration) {
+	stalenessMtx.Lock()
+	defer stalenessMtx.Unlock()
+	stalenessThreshold = threshold
 }
 
 // Init initializes the flag backend, using the provided refresh function

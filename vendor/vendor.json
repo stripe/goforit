@@ -21,10 +21,16 @@
 			"revisionTime": "2016-01-10T10:55:54Z"
 		},
 		{
-			"checksumSHA1": "biUnej3E0C1imptH5QX+JtTbyoM=",
+			"checksumSHA1": "5QKvAdxb0E47Nzn7iI25AfgAvOI=",
 			"path": "github.com/stretchr/testify/assert",
-			"revision": "93d48b7c2c32ab54ac6639d7edb7381b2bf95250",
-			"revisionTime": "2016-09-22T21:16:32Z"
+			"revision": "be8372ae8ec5c6daaed3cc28ebf73c54b737c240",
+			"revisionTime": "2018-02-02T15:35:43Z"
+		},
+		{
+			"checksumSHA1": "3Y2ZemkxaOSr6yq5xAyItl/vYMk=",
+			"path": "github.com/stretchr/testify/require",
+			"revision": "be8372ae8ec5c6daaed3cc28ebf73c54b737c240",
+			"revisionTime": "2018-02-02T15:35:43Z"
 		}
 	],
 	"rootPath": "github.com/stripe/goforit"
