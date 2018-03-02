@@ -8,8 +8,6 @@ import (
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/DataDog/datadog-go/statsd"
 )
 
 type Backend interface {
@@ -32,13 +30,15 @@ type jSONFormat struct {
 }
 
 func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
-	var checkStatus statsd.ServiceCheckStatus
+	//var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
+		// FIXME
+		//global.stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
 	}()
 	f, err := os.Open(file)
 	if err != nil {
-		checkStatus = statsd.Warn
+		//checkStatus = statsd.Warn
+		// TODO: Log to non-global
 		log.Print("[goforit] unable to open backend file:\n", err)
 		return nil, time.Time{}, err
 	}
