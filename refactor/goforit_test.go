@@ -3,16 +3,14 @@ package refactor
 import (
 	"bytes"
 	"errors"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"io/ioutil"
-
-	"strings"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -6,10 +6,9 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
-
-	"sync"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
