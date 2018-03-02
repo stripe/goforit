@@ -315,7 +315,7 @@ func (m *mockHistogramClient) Histogram(name string, value float64, tags []strin
 func writeMockJSONFile(t *testing.T, path string, updatedPeriod time.Duration) {
 	flags := []Flag{{"go.sun.money", 1.0}}
 	updatedTime := time.Now().Add(updatedPeriod)
-	flagsJson := &JSONFormat{flags, float64(updatedTime.Unix())}
+	flagsJson := &jSONFormat{flags, float64(updatedTime.Unix())}
 
 	jsonData, err := json.Marshal(flagsJson)
 	require.NoError(t, err)
