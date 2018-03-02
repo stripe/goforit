@@ -45,10 +45,16 @@ func TestParseCSV(t *testing.T) {
 func TestParseCSVBroken(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join("fixtures", "flags_example_broken.csv")
+	path := filepath.Join("fixtures", "flags_broken1.csv")
 	file, err := os.Open(path)
 	defer file.Close()
 	_, _, err = CsvFileFormat{}.Read(file)
+	assert.Error(t, err)
+
+	path = filepath.Join("fixtures", "flags_broken2.csv")
+	file2, err := os.Open(path)
+	defer file2.Close()
+	_, _, err = CsvFileFormat{}.Read(file2)
 	assert.Error(t, err)
 }
 

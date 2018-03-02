@@ -12,7 +12,7 @@ const DefaultRefreshInterval = 30 * time.Second
 
 // A FileFormat knows how to read a file format
 type FileFormat interface {
-	// Read reads the given file
+	// Read reads flags from the given file
 	// It yields a list of flags and the last modified time.
 	// Returns empty time if it's unknown.
 	Read(io.Reader) ([]Flag, time.Time, error)
@@ -53,35 +53,25 @@ type fileBackend struct {
 	ticker          *time.Ticker
 }
 
-func (fb *fileBackend) handleError(err error) {
-	if fb.errorHandler != nil {
-		go fb.errorHandler(err)
-	}
-}
-
-func (fb *fileBackend) refresh() {
+func (fb *fileBackend) refresh() error {
 	f, err := os.Open(fb.path)
 	if os.IsNotExist(err) {
-		fb.handleError(ErrFileMissing{fb.path})
-		return
+		return fb.handleError(ErrFileMissing{fb.path})
 	} else if err != nil {
-		fb.handleError(err)
-		return
+		return fb.handleError(err)
 	}
 	defer f.Close()
 
 	flags, lastMod, err := fb.format.Read(f)
 	if err != nil {
-		fb.handleError(ErrFileFormat{fb.path, err})
-		return
+		return fb.handleError(ErrFileFormat{fb.path, err})
 	}
 
 	// Get a last-modified date from the file itself
 	if lastMod.IsZero() {
 		stat, err := f.Stat()
 		if err != nil {
-			fb.handleError(err)
-			return
+			return fb.handleError(err)
 		}
 		lastMod = stat.ModTime()
 	}
@@ -97,14 +87,21 @@ func (fb *fileBackend) refresh() {
 	fb.lastMod = lastMod
 	fb.flags = fmap
 
-	if !lastMod.IsZero() && fb.ageCallback != nil {
-		go fb.ageCallback(AgeSource, time.Now().Sub(lastMod))
+	if !lastMod.IsZero() {
+		fb.handleAge(time.Now().Sub(lastMod))
 	}
+	return nil
 }
 
 func (fb *fileBackend) Close() error {
 	fb.ticker.Stop()
-	return nil
+	return fb.BackendBase.Close()
+}
+
+func (b *fileBackend) SetErrorHandler(h ErrorHandler) {
+	b.BackendBase.SetErrorHandler(h)
+	// Force a refresh, to catch any errors
+	b.refresh()
 }
 
 func (fb *fileBackend) Flag(name string) (Flag, time.Time, error) {
