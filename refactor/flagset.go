@@ -28,6 +28,10 @@ type Flagset struct {
 	// - Use sentry for errors?
 }
 
+func defaultLogger() *log.Logger {
+	return log.New(os.Stderr, "goforit error", log.LstdFlags)
+}
+
 // New creates a new Flagset
 func New(backend Backend, opts ...Option) *Flagset {
 	fs := &Flagset{
@@ -35,7 +39,7 @@ func New(backend Backend, opts ...Option) *Flagset {
 		defaultTags: map[string]string{},
 		random:      newRandom(time.Now().UnixNano()),
 	}
-	fs.setLogger(log.New(os.Stderr, "goforit error", log.LstdFlags))
+	fs.setLogger(defaultLogger())
 	for _, opt := range opts {
 		opt(fs)
 	}

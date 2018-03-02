@@ -93,7 +93,7 @@ func TestFlagsetOverrides(t *testing.T) {
 	mb.setFlag("c", mbFlag{value: false})
 
 	// Can override with options
-	fs := New(mb, Override("a", false, "d", true))
+	fs := New(mb, OverrideFlags("a", false, "d", true))
 	defer fs.Close()
 	assert.False(t, fs.Enabled("a", nil))
 	assert.False(t, fs.Enabled("b", nil))
@@ -317,7 +317,7 @@ func TestFlagsetCheckCallbacks(t *testing.T) {
 	var mtx sync.Mutex
 	results := map[enabledResult]int{}
 
-	fs := New(mb, Override("c", true), OnError(nil), OnCheck(func(f string, e bool) {
+	fs := New(mb, OverrideFlags("c", true), OnError(nil), OnCheck(func(f string, e bool) {
 		mtx.Lock()
 		defer mtx.Unlock()
 		r := enabledResult{f, e}
@@ -351,7 +351,7 @@ func TestFlagsetAge(t *testing.T) {
 	var mtx sync.Mutex
 	ages := []time.Duration{}
 
-	fs := New(mb, Override("c", true), OnAge(func(ag AgeType, age time.Duration) {
+	fs := New(mb, OverrideFlags("c", true), OnAge(func(ag AgeType, age time.Duration) {
 		mtx.Lock()
 		defer mtx.Unlock()
 		assert.Equal(t, AgeBackend, ag)
@@ -390,7 +390,7 @@ func TestFlagsetBackendCallbacks(t *testing.T) {
 	var mtx sync.Mutex
 	ages := map[AgeType][]time.Duration{}
 
-	fs := New(mb, Override("c", true), OnError(me.set), MaxStaleness(10*time.Second),
+	fs := New(mb, OverrideFlags("c", true), OnError(me.set), MaxStaleness(10*time.Second),
 		OnAge(func(ag AgeType, age time.Duration) {
 			mtx.Lock()
 			defer mtx.Unlock()

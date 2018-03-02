@@ -55,7 +55,7 @@ func Seed(seed int64) Option {
 }
 
 // Override overrides a number of values
-func Override(args ...interface{}) Option {
+func OverrideFlags(args ...interface{}) Option {
 	if len(args)%2 != 0 {
 		panic("Override takes a list of pairs")
 	}
