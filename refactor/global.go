@@ -11,6 +11,9 @@ const defaultUninitializedLog = time.Hour
 var globalMtx sync.RWMutex
 var globalFlagset *Flagset
 
+// This is only here for tests
+var globalLogger *throttledLogger
+
 // A logger for messages, but throttled to once every interval.
 // This way we can log that we're not initialized, but not spam all over
 // the logs.
@@ -34,7 +37,7 @@ func (tl *throttledLogger) log(err error) {
 type ErrUninitialized struct{}
 
 func (e ErrUninitialized) Error() string {
-	return "Goforit uninitialized, but feature flags are being tested"
+	return "Goforit uninitialized, but feature flags are being checked"
 }
 
 type uninitializedBackend struct {
@@ -42,23 +45,24 @@ type uninitializedBackend struct {
 }
 
 func (*uninitializedBackend) Flag(name string) (Flag, time.Time, error) {
-	return nil, time.Time{}, ErrUninitialized{}
+	return SampleFlag{FlagName: name, Rate: 0}, time.Time{}, ErrUninitialized{}
 }
 
 func swapGlobalFlagset(fs *Flagset) error {
-	if fs == nil {
-		// A nice default that does ~nothing, and logs every so often
-		logger := &throttledLogger{
-			logger:   defaultLogger(),
-			interval: defaultUninitializedLog,
-		}
-		fs = New(&uninitializedBackend{}, OnError(logger.log))
-	}
-
 	var old *Flagset
 	func() {
 		globalMtx.Lock()
 		defer globalMtx.Unlock()
+
+		if fs == nil {
+			// A nice default that does ~nothing, and logs every so often
+			globalLogger = &throttledLogger{
+				logger:   defaultLogger(),
+				interval: defaultUninitializedLog,
+			}
+			fs = New(&uninitializedBackend{}, OnError(globalLogger.log))
+		}
+
 		old = globalFlagset
 		globalFlagset = fs
 	}()

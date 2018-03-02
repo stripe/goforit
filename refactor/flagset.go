@@ -29,7 +29,7 @@ type Flagset struct {
 }
 
 func defaultLogger() *log.Logger {
-	return log.New(os.Stderr, "goforit error", log.LstdFlags)
+	return log.New(os.Stderr, "goforit error: ", log.LstdFlags)
 }
 
 // New creates a new Flagset

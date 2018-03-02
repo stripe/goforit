@@ -77,3 +77,10 @@ func LogErrors(logger *log.Logger) Option {
 		fs.setLogger(logger)
 	}
 }
+
+// SuppressErrors causes errors to be hidden
+func SuppressErrors() Option {
+	return func(fs *Flagset) {
+		fs.errorHandler = func(error) {}
+	}
+}
