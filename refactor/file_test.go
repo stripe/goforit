@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -392,4 +394,44 @@ func TestFileBackendFormatAge(t *testing.T) {
 		assert.InEpsilon(t, 900*1000*time.Hour, age, 0.1)
 	})
 	time.Sleep(80 * time.Millisecond)
+}
+
+func TestShrink(t *testing.T) {
+	t.Parallel()
+
+	file, err := ioutil.TempFile("", "goforit-")
+	require.NoError(t, err)
+	for i := 0; i < 20; i++ {
+		_, err = fmt.Fprintf(file, "test.%d,%d\n", i, 0)
+		require.NoError(t, err)
+	}
+	err = file.Sync()
+	require.NoError(t, err)
+
+	backend := NewFileBackend(file.Name(), CsvFileFormat{}, 10*time.Millisecond)
+	defer backend.Close()
+
+	var mtx sync.Mutex
+	var fileErr error
+	var errorCount int
+	backend.SetErrorHandler(func(err error) {
+		mtx.Lock()
+		defer mtx.Unlock()
+		fileErr = err
+		errorCount++
+	})
+
+	// Make a lot of flags disappear!
+	time.Sleep(40 * time.Millisecond)
+	atomicWriteFile(t, file, "test.1,0")
+	time.Sleep(40 * time.Millisecond)
+
+	// We should see precisely one error
+	func() {
+		mtx.Lock()
+		defer mtx.Unlock()
+		assert.Equal(t, 1, errorCount)
+		assert.NotNil(t, fileErr)
+		assert.IsType(t, ErrFlagsShrunk{}, fileErr)
+	}()
 }

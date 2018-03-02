@@ -10,6 +10,10 @@ import (
 
 const DefaultRefreshInterval = 30 * time.Second
 
+// Identify losing too many flags at once
+const shrinkMinFraction = 0.8
+const shrinkMaxAmount = 10
+
 // A FileFormat knows how to read a file format
 type FileFormat interface {
 	// Read reads flags from the given file
@@ -39,6 +43,18 @@ func (e ErrFileFormat) Error() string {
 	return fmt.Sprintf("Error parsing flag file: file=%s: err=%s", e.Path, e.Cause.Error())
 }
 
+// ErrFlagsShrunk indicates that the number of flags decreased by an unlikely amount.
+// We'll still believe the shrink, but we're cautious that we may be missing flags.
+type ErrFlagsShrunk struct {
+	Old int
+	New int
+}
+
+// Error yields the error message for ErrFlagsShrunk
+func (e ErrFlagsShrunk) Error() string {
+	return fmt.Sprintf("Flag count shrunk by an unlikely amount: old=%d: new=%d", e.Old, e.New)
+}
+
 // fileBackend is a backend based on a file
 type fileBackend struct {
 	BackendBase
@@ -66,7 +82,6 @@ func (fb *fileBackend) refresh() error {
 	if err != nil {
 		return fb.handleError(ErrFileFormat{fb.path, err})
 	}
-	// TODO: Report if the number of flags gets much smaller
 
 	// Get a last-modified date from the file itself
 	if lastMod.IsZero() {
@@ -86,10 +101,14 @@ func (fb *fileBackend) refresh() error {
 	fb.mtx.Lock()
 	defer fb.mtx.Unlock()
 	fb.lastMod = lastMod
+	old := fb.flags
 	fb.flags = fmap
 
 	if !lastMod.IsZero() {
 		fb.handleAge(time.Now().Sub(lastMod))
+	}
+	if len(old)-len(fmap) > shrinkMaxAmount && float64(len(fmap))/float64(len(old)) < shrinkMinFraction {
+		return fb.handleError(ErrFlagsShrunk{len(old), len(fmap)})
 	}
 	return nil
 }
