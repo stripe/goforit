@@ -485,3 +485,40 @@ func TestGoforitEndToEnd(t *testing.T) {
 	i++
 	assert.Equal(t, len(lines), i)
 }
+
+type mockRateBackend struct {
+	BackendBase
+}
+
+func (m *mockRateBackend) Flag(name string) (Flag, time.Time, error) {
+	return SampleFlag{name, 0.5}, time.Time{}, nil
+}
+
+func TestGoforitSeed(t *testing.T) {
+	t.Parallel()
+
+	mb := &mockRateBackend{}
+	seed := time.Now().UnixNano()
+	gi1 := New(mb, Seed(seed))
+	defer gi1.Close()
+	gi2 := New(mb, Seed(seed))
+	defer gi2.Close()
+	gi3 := New(mb)
+	defer gi3.Close()
+
+	match12 := 0
+	match13 := 0
+	for i := 0; i < 10000; i++ {
+		e1 := gi1.Enabled("a", nil)
+		e2 := gi2.Enabled("a", nil)
+		e3 := gi3.Enabled("a", nil)
+		if e1 == e2 {
+			match12++
+		}
+		if e1 == e3 {
+			match13++
+		}
+	}
+	assert.Equal(t, 10000, match12)
+	assert.InEpsilon(t, 5000, match13, 0.1)
+}
