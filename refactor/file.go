@@ -25,7 +25,7 @@ type ErrFileMissing struct {
 
 // Error yields the error message for ErrFileMissing
 func (e ErrFileMissing) Error() string {
-	return fmt.Sprintf("Missing flag file: %s", e.Path)
+	return fmt.Sprintf("Missing flag file: file=%s", e.Path)
 }
 
 // ErrFileFormat indicates an error parsing a file
@@ -36,7 +36,7 @@ type ErrFileFormat struct {
 
 // Error yields the error message for ErrFileFormat
 func (e ErrFileFormat) Error() string {
-	return fmt.Sprintf("Error parsing flag file %s: %s", e.Path, e.Cause.Error())
+	return fmt.Sprintf("Error parsing flag file: file=%s: err=%s", e.Path, e.Cause.Error())
 }
 
 // fileBackend is a backend based on a file
@@ -66,6 +66,7 @@ func (fb *fileBackend) refresh() error {
 	if err != nil {
 		return fb.handleError(ErrFileFormat{fb.path, err})
 	}
+	// TODO: Report if the number of flags gets much smaller
 
 	// Get a last-modified date from the file itself
 	if lastMod.IsZero() {

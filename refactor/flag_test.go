@@ -1,9 +1,8 @@
 package refactor
 
 import (
-	"testing"
-
 	"math/rand"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )

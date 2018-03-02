@@ -348,14 +348,14 @@ func TestFileBackendAge(t *testing.T) {
 		case <-done:
 			close(ages)
 		case ages <- age:
+		default:
 		}
 	})
 
 	time.Sleep(80 * time.Millisecond)
 	err = os.Chtimes(file.Name(), time.Now(), time.Now()) // touch
 	assert.NoError(t, err)
-	time.Sleep(300 * time.Millisecond)
-	backend.Close()
+	time.Sleep(200 * time.Millisecond)
 	close(done)
 
 	var lastAge time.Duration
@@ -369,5 +369,28 @@ func TestFileBackendAge(t *testing.T) {
 	// Ages shrink as many times as we touch
 	assert.Equal(t, ageShrink, 1)
 	// If we don't touch for awhile, times should get "big"
-	assert.True(t, lastAge > 100*time.Millisecond)
+	assert.True(t, lastAge > 80*time.Millisecond)
+}
+
+type mockAgeFormat struct {
+	t time.Time
+}
+
+func (m mockAgeFormat) Read(io.Reader) ([]Flag, time.Time, error) {
+	return []Flag{}, m.t, nil
+}
+
+// Test that the format can specify a last-modified time
+func TestFileBackendFormatAge(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("fixtures", "flags_example.csv")
+	lastMod := time.Now().Add(-900 * 1000 * time.Hour) // takes priority over the file mod time
+	backend := NewFileBackend(path, mockAgeFormat{lastMod}, 10*time.Millisecond)
+	defer backend.Close()
+
+	backend.SetAgeCallback(func(ag AgeType, age time.Duration) {
+		assert.InEpsilon(t, 900*1000*time.Hour, age, 0.1)
+	})
+	time.Sleep(80 * time.Millisecond)
 }
