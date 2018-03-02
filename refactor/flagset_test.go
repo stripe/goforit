@@ -61,30 +61,30 @@ func (m *mockBackend) setFlag(name string, flag mbFlag) {
 	m.flags[name] = flag
 }
 
-func TestGoforit(t *testing.T) {
+func TestFlagset(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
 	mb.setFlag("foo", mbFlag{value: true})
 	mb.setFlag("bar", mbFlag{value: false})
 
-	gi := New(mb, OnError(nil))
-	defer gi.Close()
+	fs := New(mb, OnError(nil))
+	defer fs.Close()
 
-	en := gi.Enabled("foo", nil)
+	en := fs.Enabled("foo", nil)
 	assert.True(t, en)
 	assert.Equal(t, map[string]string{}, mb.lastTags)
 
-	en = gi.Enabled("bar", map[string]string{"a": "b"})
+	en = fs.Enabled("bar", map[string]string{"a": "b"})
 	assert.False(t, en)
 	assert.Equal(t, map[string]string{"a": "b"}, mb.lastTags)
 
-	en = gi.Enabled("iggy", map[string]string{})
+	en = fs.Enabled("iggy", map[string]string{})
 	assert.False(t, en)
 	assert.Nil(t, mb.lastTags)
 }
 
-func TestGoforitOverrides(t *testing.T) {
+func TestFlagsetOverrides(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
@@ -93,40 +93,40 @@ func TestGoforitOverrides(t *testing.T) {
 	mb.setFlag("c", mbFlag{value: false})
 
 	// Can override with options
-	gi := New(mb, Override("a", false, "d", true))
-	defer gi.Close()
-	assert.False(t, gi.Enabled("a", nil))
-	assert.False(t, gi.Enabled("b", nil))
-	assert.False(t, gi.Enabled("c", nil))
-	assert.True(t, gi.Enabled("d", nil)) // including things that didn't exist before
+	fs := New(mb, Override("a", false, "d", true))
+	defer fs.Close()
+	assert.False(t, fs.Enabled("a", nil))
+	assert.False(t, fs.Enabled("b", nil))
+	assert.False(t, fs.Enabled("c", nil))
+	assert.True(t, fs.Enabled("d", nil)) // including things that didn't exist before
 
 	// Can override later on, including over other overrides
-	gi.Override("c", true)
-	assert.True(t, gi.Enabled("c", nil))
-	gi.Override("c", false)
-	assert.False(t, gi.Enabled("c", nil))
+	fs.Override("c", true)
+	assert.True(t, fs.Enabled("c", nil))
+	fs.Override("c", false)
+	assert.False(t, fs.Enabled("c", nil))
 }
 
-func TestGoforitDefaultTags(t *testing.T) {
+func TestFlagsetDefaultTags(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
 	mb.setFlag("a", mbFlag{value: true})
 
-	gi := New(mb, Tags(map[string]string{"cluster": "south", "hosttype": "goforit"}))
-	defer gi.Close()
+	fs := New(mb, Tags(map[string]string{"cluster": "south", "hosttype": "goforit"}))
+	defer fs.Close()
 
-	gi.Enabled("a", nil)
+	fs.Enabled("a", nil)
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit"}, mb.lastTags)
-	gi.Enabled("a", map[string]string{"user": "bob"})
+	fs.Enabled("a", map[string]string{"user": "bob"})
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit", "user": "bob"},
 		mb.lastTags)
-	gi.Enabled("a", map[string]string{"user": "bob", "hosttype": "k8s"})
+	fs.Enabled("a", map[string]string{"user": "bob", "hosttype": "k8s"})
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "k8s", "user": "bob"},
 		mb.lastTags)
 
-	gi.AddDefaultTags(map[string]string{"extra": "42"})
-	gi.Enabled("a", nil)
+	fs.AddDefaultTags(map[string]string{"extra": "42"})
+	fs.Enabled("a", nil)
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit", "extra": "42"},
 		mb.lastTags)
 }
@@ -150,28 +150,28 @@ func (m *mockErrStorage) get() error {
 	return m.err
 }
 
-func TestGoforitUnknownFlag(t *testing.T) {
+func TestFlagsetUnknownFlag(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
 	mb.setFlag("myflag", mbFlag{value: true})
 
 	me := &mockErrStorage{}
-	gi := New(mb, OnError(me.set))
-	defer gi.Close()
+	fs := New(mb, OnError(me.set))
+	defer fs.Close()
 
-	en := gi.Enabled("myflag", nil)
+	en := fs.Enabled("myflag", nil)
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 
-	en = gi.Enabled("otherflag", nil)
+	en = fs.Enabled("otherflag", nil)
 	assert.False(t, en)
 	err := me.get()
 	assert.Error(t, err)
 	assert.IsType(t, ErrUnknownFlag{}, err)
 	assert.Contains(t, err.Error(), "otherflag")
 
-	en = gi.Enabled("yaflag", nil)
+	en = fs.Enabled("yaflag", nil)
 	assert.False(t, en)
 	err = me.get()
 	assert.Error(t, err)
@@ -179,30 +179,30 @@ func TestGoforitUnknownFlag(t *testing.T) {
 	assert.Contains(t, err.Error(), "yaflag")
 
 	me.set(nil)
-	en = gi.Enabled("myflag", nil)
+	en = fs.Enabled("myflag", nil)
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 }
 
-func TestGoforitStale(t *testing.T) {
+func TestFlagsetStale(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{lastMod: time.Now().Add(-time.Hour)}
 	mb.setFlag("myflag", mbFlag{value: true})
 
 	me := &mockErrStorage{}
-	gi := New(mb, OnError(me.set))
-	defer gi.Close()
+	fs := New(mb, OnError(me.set))
+	defer fs.Close()
 
 	// Old times are fine if we have no maxStaleness
-	en := gi.Enabled("myflag", nil)
+	en := fs.Enabled("myflag", nil)
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 
-	gi.Close()
-	gi = New(mb, OnError(me.set), MaxStaleness(time.Minute+2*time.Second))
+	fs.Close()
+	fs = New(mb, OnError(me.set), MaxStaleness(time.Minute+2*time.Second))
 
-	en = gi.Enabled("myflag", nil)
+	en = fs.Enabled("myflag", nil)
 	assert.True(t, en) // stale data doesn't stop flags working
 	err := me.get()
 	assert.Error(t, err)
@@ -211,7 +211,7 @@ func TestGoforitStale(t *testing.T) {
 
 	me.set(nil)
 	mb.lastMod = time.Now()
-	en = gi.Enabled("myflag", nil)
+	en = fs.Enabled("myflag", nil)
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 }
@@ -241,7 +241,7 @@ func (m *mockMultiErrStorage) get() []error {
 	return m.errs
 }
 
-func TestGoforitErrors(t *testing.T) {
+func TestFlagsetErrors(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
@@ -251,10 +251,10 @@ func TestGoforitErrors(t *testing.T) {
 	mb.setFlag("d", mbFlag{value: false})
 
 	me := &mockMultiErrStorage{}
-	gi := New(mb, OnError(me.set))
-	defer gi.Close()
+	fs := New(mb, OnError(me.set))
+	defer fs.Close()
 
-	en := gi.Enabled("a", nil)
+	en := fs.Enabled("a", nil)
 	assert.False(t, en)
 	errs := me.get()
 	assert.Equal(t, 1, len(errs))
@@ -262,7 +262,7 @@ func TestGoforitErrors(t *testing.T) {
 	assert.Contains(t, errs[0].Error(), "errA")
 	me.clear()
 
-	en = gi.Enabled("c", nil)
+	en = fs.Enabled("c", nil)
 	assert.True(t, en) // Can be both error and have flag on. Eg: warnings
 	errs = me.get()
 	assert.Equal(t, 1, len(errs))
@@ -271,7 +271,7 @@ func TestGoforitErrors(t *testing.T) {
 	me.clear()
 
 	mb.err = errors.New("backendErr")
-	en = gi.Enabled("b", nil)
+	en = fs.Enabled("b", nil)
 	assert.True(t, en)
 	errs = me.get()
 	assert.Equal(t, 1, len(errs))
@@ -279,7 +279,7 @@ func TestGoforitErrors(t *testing.T) {
 	assert.Contains(t, errs[0].Error(), "backendErr")
 	me.clear()
 
-	en = gi.Enabled("d", nil)
+	en = fs.Enabled("d", nil)
 	assert.False(t, en)
 	errs = me.get()
 	assert.Equal(t, 1, len(errs))
@@ -288,7 +288,7 @@ func TestGoforitErrors(t *testing.T) {
 	me.clear()
 
 	// Multiple errors!
-	en = gi.Enabled("e", nil)
+	en = fs.Enabled("e", nil)
 	assert.False(t, en)
 	errs = me.get()
 	assert.Equal(t, 2, len(errs))
@@ -307,7 +307,7 @@ type enabledResult struct {
 	result bool
 }
 
-func TestGoforitCheckCallbacks(t *testing.T) {
+func TestFlagsetCheckCallbacks(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
@@ -317,21 +317,21 @@ func TestGoforitCheckCallbacks(t *testing.T) {
 	var mtx sync.Mutex
 	results := map[enabledResult]int{}
 
-	gi := New(mb, Override("c", true), OnError(nil), OnCheck(func(f string, e bool) {
+	fs := New(mb, Override("c", true), OnError(nil), OnCheck(func(f string, e bool) {
 		mtx.Lock()
 		defer mtx.Unlock()
 		r := enabledResult{f, e}
 		results[r] += 1
 	}))
-	defer gi.Close()
+	defer fs.Close()
 
-	gi.Enabled("a", nil)
-	gi.Enabled("b", nil)
-	gi.Enabled("b", nil)
-	gi.Enabled("c", nil)
-	gi.Enabled("d", nil)
+	fs.Enabled("a", nil)
+	fs.Enabled("b", nil)
+	fs.Enabled("b", nil)
+	fs.Enabled("c", nil)
+	fs.Enabled("d", nil)
 	mb.setFlag("b", mbFlag{value: true})
-	gi.Enabled("b", nil)
+	fs.Enabled("b", nil)
 
 	time.Sleep(20 * time.Millisecond)
 	assert.Equal(t, 5, len(results))
@@ -342,7 +342,7 @@ func TestGoforitCheckCallbacks(t *testing.T) {
 	assert.Equal(t, 1, results[enabledResult{"d", false}])
 }
 
-func TestGoforitAge(t *testing.T) {
+func TestFlagsetAge(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{}
@@ -351,35 +351,35 @@ func TestGoforitAge(t *testing.T) {
 	var mtx sync.Mutex
 	ages := []time.Duration{}
 
-	gi := New(mb, Override("c", true), OnAge(func(ag AgeType, age time.Duration) {
+	fs := New(mb, Override("c", true), OnAge(func(ag AgeType, age time.Duration) {
 		mtx.Lock()
 		defer mtx.Unlock()
 		assert.Equal(t, AgeBackend, ag)
 		ages = append(ages, age)
 	}))
-	defer gi.Close()
+	defer fs.Close()
 
 	// When lastMod is zero, no ages recorded
-	gi.Enabled("a", nil)
+	fs.Enabled("a", nil)
 	time.Sleep(20 * time.Millisecond)
 	assert.Empty(t, ages)
 
 	mb.lastMod = time.Now().Add(-10 * time.Second)
-	gi.Enabled("a", nil)
-	gi.Enabled("a", nil)
+	fs.Enabled("a", nil)
+	fs.Enabled("a", nil)
 	time.Sleep(20 * time.Millisecond)
 	assert.Equal(t, 2, len(ages))
 	assert.InDelta(t, 10, ages[1].Seconds(), 2)
 
 	mb.lastMod = time.Now()
-	gi.Enabled("a", nil)
-	gi.Enabled("a", nil)
+	fs.Enabled("a", nil)
+	fs.Enabled("a", nil)
 	time.Sleep(20 * time.Millisecond)
 	assert.Equal(t, 4, len(ages))
 	assert.InDelta(t, 0, ages[3].Seconds(), 2)
 }
 
-func TestGoforitBackendCallbacks(t *testing.T) {
+func TestFlagsetBackendCallbacks(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockBackend{lastMod: time.Now()}
@@ -390,17 +390,17 @@ func TestGoforitBackendCallbacks(t *testing.T) {
 	var mtx sync.Mutex
 	ages := map[AgeType][]time.Duration{}
 
-	gi := New(mb, Override("c", true), OnError(me.set), MaxStaleness(10*time.Second),
+	fs := New(mb, Override("c", true), OnError(me.set), MaxStaleness(10*time.Second),
 		OnAge(func(ag AgeType, age time.Duration) {
 			mtx.Lock()
 			defer mtx.Unlock()
 			ages[ag] = append(ages[ag], age)
 		}))
-	defer gi.Close()
+	defer fs.Close()
 
-	gi.Enabled("a", nil)
-	gi.Enabled("a", nil)
-	gi.Enabled("a", nil)
+	fs.Enabled("a", nil)
+	fs.Enabled("a", nil)
+	fs.Enabled("a", nil)
 	mb.handleError(errors.New("foo"))
 	mb.handleAge(2 * time.Second)
 	time.Sleep(40 * time.Millisecond)
@@ -414,15 +414,15 @@ func TestGoforitBackendCallbacks(t *testing.T) {
 	assert.IsType(t, ErrDataStale{}, errs[1]) // backend can trigger staleness
 }
 
-func TestGoforitLogger(t *testing.T) {
+func TestFlagsetLogger(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
 	mb := &mockBackend{}
-	gi := New(mb, LogErrors(log.New(&buf, "myprefix", log.LstdFlags)))
-	defer gi.Close()
+	fs := New(mb, LogErrors(log.New(&buf, "myprefix", log.LstdFlags)))
+	defer fs.Close()
 
-	gi.Enabled("fakeflag", nil)
+	fs.Enabled("fakeflag", nil)
 	time.Sleep(80 * time.Millisecond)
 	s := string(buf.Bytes())
 
@@ -430,7 +430,7 @@ func TestGoforitLogger(t *testing.T) {
 	assert.Contains(t, s, "fakeflag")
 }
 
-func TestGoforitEndToEnd(t *testing.T) {
+func TestFlagsetEndToEnd(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
@@ -443,8 +443,8 @@ func TestGoforitEndToEnd(t *testing.T) {
 	defer os.Remove(tmp.Name())
 
 	backend := NewCsvBackend(tmp.Name(), 10*time.Millisecond)
-	gi := New(backend, LogErrors(logger))
-	defer gi.Close()
+	fs := New(backend, LogErrors(logger))
+	defer fs.Close()
 	// No file yet, we should get file-missing errors
 
 	atomicWriteFile(t, tmp, "myflag,XXX")
@@ -453,12 +453,12 @@ func TestGoforitEndToEnd(t *testing.T) {
 
 	atomicWriteFile(t, tmp, "myflag,0")
 	time.Sleep(80 * time.Millisecond)
-	assert.Equal(t, false, gi.Enabled("myflag", nil))
+	assert.Equal(t, false, fs.Enabled("myflag", nil))
 
 	atomicWriteFile(t, tmp, "myflag,1")
 	time.Sleep(80 * time.Millisecond)
-	assert.Equal(t, true, gi.Enabled("myflag", nil))
-	assert.Equal(t, false, gi.Enabled("fakeflag", nil))
+	assert.Equal(t, true, fs.Enabled("myflag", nil))
+	assert.Equal(t, false, fs.Enabled("fakeflag", nil))
 	time.Sleep(80 * time.Millisecond)
 
 	s := string(buf.Bytes())
@@ -494,7 +494,7 @@ func (m *mockRateBackend) Flag(name string) (Flag, time.Time, error) {
 	return SampleFlag{name, 0.5}, time.Time{}, nil
 }
 
-func TestGoforitSeed(t *testing.T) {
+func TestFlagsetSeed(t *testing.T) {
 	t.Parallel()
 
 	mb := &mockRateBackend{}

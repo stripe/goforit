@@ -31,7 +31,6 @@ type ErrBadTags struct {
 }
 
 // TODO: Error for uninitialized global goforit
-// TODO: Logging
 
 // AgeType is a type of age that could be reported
 type AgeType string
