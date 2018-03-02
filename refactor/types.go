@@ -1,15 +1,32 @@
 package refactor
 
-import (
-	"io"
-	"time"
+import "time"
+
+type AgeType string
+
+const (
+	// AgeSource indicates the duration ago that a backend's source was updated.
+	// The source could be a file, network resource, etc.
+	AgeSource AgeType = "age.source"
+
+	// AgeBackend indicates the duration ago that a backend's data was updated,
+	// when Enabled is called.
+	// The underlying source of that data may still be stale.
+	AgeBackend = "age.backend"
 )
+
+type ErrorHandler func(error)
+type AgeCallback func(AgeType, time.Duration)
 
 // Error types
 type ErrUnknownFlag (string)
 type ErrFlagTooOld struct {
-	string
-	time.Duration
+	flag string
+	age  time.Duration
+}
+type ErrMissingTag struct {
+	flag string
+	tag  string
 }
 
 // Goforit allows checking for flag status
@@ -25,7 +42,7 @@ type Goforit struct {
 	// AddDefaultTags(tags)
 	// SetErrorHandler(func(error))
 	// SetCheckCallback(func(name string, status bool))
-	// SetAgeCallback(func(time.Duration))
+	// SetAgeCallback(func(type, time.Duration))
 	// SetMaxStaleness()
 
 	// Special options for:
@@ -35,37 +52,6 @@ type Goforit struct {
 }
 
 // Global equivalents of above
-
-// A Backend knows the current set of flags
-type Backend interface {
-	// GetFlag gets a flag for a name.
-	// Also yields the last time it was updated (zero time if unknown)
-	Flag(name string) (Flag, time.Time, error)
-
-	// file is corrupt, file is missing, ...
-	SetErrorHandler(func(error))
-
-	Close() error
-}
-
-// A FileFormat knows how to read a file format
-type FileFormat interface {
-	Read(io.Reader) ([]Flag, time.Time, error)
-}
-
-type ErrFileMissing (string)
-type ErrFileFormat struct {
-	string
-	error
-}
-
-// A FileBackend is a backend from a file.
-type fileBackend struct {
-	path    string
-	format  FileFormat
-	refresh time.Duration
-	// ...
-}
 
 // Some built-in backends:
 // func CsvBackend(path string, refresh time.Duration) (Backend, error)

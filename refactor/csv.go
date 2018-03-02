@@ -7,10 +7,11 @@ import (
 	"time"
 )
 
-// A FileFormat knows how to read a file format
-type csvFileFormat struct{}
+// CsvFile format knows how to read CSV files
+type CsvFileFormat struct{}
 
-func (f csvFileFormat) Read(r io.Reader) (flags []Flag, age time.Time, err error) {
+// Read reads flags from a CSV file
+func (f CsvFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 	// Every row should have 2 fields
 	const FieldsPerRecord = 2
 
@@ -18,20 +19,25 @@ func (f csvFileFormat) Read(r io.Reader) (flags []Flag, age time.Time, err error
 	cr.FieldsPerRecord = FieldsPerRecord
 	cr.TrimLeadingSpace = true
 
+	var rows [][]string
 	rows, err := cr.ReadAll()
 	if err != nil {
 		return nil, time.Time{}, err
 	}
 
-	var rate float64
+	var flags []Flag
 	for _, row := range rows {
 		name := row[0]
-		rate, err = strconv.ParseFloat(row[1], 64)
+		rate, err := strconv.ParseFloat(row[1], 64)
 		if err != nil {
-			return
+			return nil, time.Time{}, err
 		}
 
 		flags = append(flags, SampleFlag{FlagName: name, Rate: rate})
 	}
-	return
+	return flags, time.Time{}, nil
+}
+
+func NewCsvBackend(path string, refreshInterval time.Duration) Backend {
+	return NewFileBackend(path, CsvFileFormat{}, refreshInterval)
 }

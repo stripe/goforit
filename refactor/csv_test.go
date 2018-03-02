@@ -30,7 +30,8 @@ func TestParseCSV(t *testing.T) {
 
 	file, err := os.Open(path)
 	require.NoError(t, err)
-	flags, lastMod, err := csvFileFormat{}.Read(file)
+	defer file.Close()
+	flags, lastMod, err := CsvFileFormat{}.Read(file)
 	assert.NoError(t, err)
 	assert.True(t, lastMod.IsZero())
 	for i, f := range flags {
@@ -39,4 +40,23 @@ func TestParseCSV(t *testing.T) {
 		assert.Equal(t, expected[i].Name(), f.Name())
 		assert.Equal(t, expected[i].Rate, sf.Rate)
 	}
+}
+
+func TestParseCSVBroken(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("fixtures", "flags_example_broken.csv")
+	file, err := os.Open(path)
+	defer file.Close()
+	_, _, err = CsvFileFormat{}.Read(file)
+	assert.Error(t, err)
+}
+
+func TestNewCsvBackend(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("fixtures", "flags_example.csv")
+	backend := NewCsvBackend(path, DefaultRefreshInterval)
+	defer backend.Close()
+
 }

@@ -8,11 +8,7 @@ type Flag interface {
 	Name() string
 
 	// Enabled checks whether this flag is enabled
-	//
-	// Errors eg:
-	// - flag tags are inappropriate
-	// - flag is unknown
-	Enabled(rnd rand.Rand, tags map[string]string) (bool, error)
+	Enabled(rnd *rand.Rand, tags map[string]string) (bool, error)
 }
 
 // SampleFlag is a simple type of flag, that only does sampling
@@ -21,10 +17,12 @@ type SampleFlag struct {
 	Rate     float64
 }
 
+// Name yields the name of this flag
 func (f SampleFlag) Name() string {
 	return f.FlagName
 }
 
-func (f SampleFlag) Enabled(rnd rand.Rand, tags map[string]string) (bool, error) {
+// Enabled determines whether this flag is enabled
+func (f SampleFlag) Enabled(rnd *rand.Rand, tags map[string]string) (bool, error) {
 	return rnd.Float64() < f.Rate, nil
 }
