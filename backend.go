@@ -1,109 +1,72 @@
 package goforit
 
 import (
-	"encoding/csv"
-	"encoding/json"
-	"io"
-	"log"
-	"os"
-	"strconv"
+	"sync"
 	"time"
 )
 
+// A Backend knows the current set of flags
 type Backend interface {
-	// Refresh returns a new set of flags.
-	// It also returns the age of these flags, or an empty time if no age is known.
-	Refresh() (map[string]Flag, time.Time, error)
+	// Flags gets the flag with the given name.
+	// Also yields the last time flags were updated (zero time if unknown)
+	Flag(name string) (Flag, time.Time, error)
+
+	// SetErrorHandler adds a handler that will be called if this backend encounters
+	// errors.
+	SetErrorHandler(ErrorHandler)
+
+	// SetAgeCallback adds a handler that should be called whenever flags are updated.
+	SetAgeCallback(AgeCallback)
+
+	// Close releases any resources held by this backend
+	Close() error
 }
 
-type csvFileBackend struct {
-	filename string
+type BackendBase struct {
+	handlerMtx   sync.RWMutex
+	errorHandler ErrorHandler
+	ageCallback  AgeCallback
 }
 
-type jsonFileBackend struct {
-	filename string
+func (b *BackendBase) SetErrorHandler(h ErrorHandler) {
+	b.handlerMtx.Lock()
+	defer b.handlerMtx.Unlock()
+	b.errorHandler = h
 }
 
-type jSONFormat struct {
-	Flags       []Flag  `json:"flags"`
-	UpdatedTime float64 `json:"updated"`
-}
-
-func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
-	//var checkStatus statsd.ServiceCheckStatus
-	defer func() {
-		// FIXME
-		//global.stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
-	}()
-	f, err := os.Open(file)
-	if err != nil {
-		//checkStatus = statsd.Warn
-		// TODO: Log to non-global
-		log.Print("[goforit] unable to open backend file:\n", err)
-		return nil, time.Time{}, err
+func (b *BackendBase) handleError(err error) error {
+	b.handlerMtx.RLock()
+	defer b.handlerMtx.RUnlock()
+	if b.errorHandler != nil {
+		go b.errorHandler(err)
 	}
-	defer f.Close()
-	return parse(f)
+	return nil
 }
 
-func (b jsonFileBackend) Refresh() (map[string]Flag, time.Time, error) {
-	return readFile(b.filename, "json", parseFlagsJSON)
+func (b *BackendBase) SetAgeCallback(cb AgeCallback) {
+	b.handlerMtx.Lock()
+	defer b.handlerMtx.Unlock()
+	b.ageCallback = cb
 }
 
-func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
-	return readFile(b.filename, "csv", parseFlagsCSV)
-}
-
-func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
-	// every row is guaranteed to have 2 fields
-	const FieldsPerRecord = 2
-
-	cr := csv.NewReader(r)
-	cr.FieldsPerRecord = FieldsPerRecord
-	cr.TrimLeadingSpace = true
-
-	rows, err := cr.ReadAll()
-	if err != nil {
-		log.Print("[goforit] error parsing CSV file:\n", err)
-		return nil, time.Time{}, err
+func (b *BackendBase) handleAge(age time.Duration) {
+	b.handlerMtx.RLock()
+	defer b.handlerMtx.RUnlock()
+	if b.ageCallback != nil {
+		go b.ageCallback(AgeSource, age)
 	}
-
-	flags := map[string]Flag{}
-	for _, row := range rows {
-		name := row[0]
-
-		rate, err := strconv.ParseFloat(row[1], 64)
-		if err != nil {
-			// TODO also track somehow
-			rate = 0
-		}
-
-		flags[name] = Flag{Name: name, Rate: rate}
-	}
-	return flags, time.Time{}, nil
 }
 
-func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
-	dec := json.NewDecoder(r)
-	var v jSONFormat
-	err := dec.Decode(&v)
-	if err != nil {
-		log.Print("[goforit] error parsing JSON file:\n", err)
-		return nil, time.Time{}, err
-	}
-	return flagsToMap(v.Flags), time.Unix(int64(v.UpdatedTime), 0), nil
+func (b *BackendBase) Close() error {
+	return nil
 }
 
-// BackendFromFile is a helper function that creates a valid
-// FlagBackend from a CSV file containing the feature flag values.
-// If the same flag is defined multiple times in the same file,
-// the last result will be used.
-func BackendFromFile(filename string) Backend {
-	return csvFileBackend{filename}
+// OffBackend is a backend where every flag is off.
+// Good for just turning off all logging.
+type OffBackend struct {
+	BackendBase
 }
 
-// BackendFromJSONFile creates a backend powered by JSON file
-// instead of CSV
-func BackendFromJSONFile(filename string) Backend {
-	return jsonFileBackend{filename}
+func (*OffBackend) Flag(name string) (Flag, time.Time, error) {
+	return SampleFlag{FlagName: name, Rate: 0}, time.Time{}, nil
 }
