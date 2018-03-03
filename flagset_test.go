@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -620,4 +621,15 @@ func TestMergeTags(t *testing.T) {
 	assert.Error(t, err)
 	assert.IsType(t, ErrInvalidTagList{}, err)
 	assert.Contains(t, err.Error(), "Unknown tag argument")
+}
+
+func BenchmarkFlagsetEnabled(b *testing.B) {
+	path := filepath.Join("fixtures", "flags_example.csv")
+	// Refresh frequently so that we're testing interference
+	backend := NewCsvBackend(path, 50*time.Millisecond)
+	fs := New(backend)
+
+	for i := 0; i < b.N; i++ {
+		fs.Enabled("go.sun.money", "tag", "value")
+	}
 }
