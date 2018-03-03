@@ -1,14 +1,10 @@
 package dd
 
 import (
-	"testing"
-
-	"sync"
-
 	"io/ioutil"
-
 	"os"
-
+	"sync"
+	"testing"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
