@@ -6,24 +6,26 @@ import (
 	"time"
 )
 
+// Minimum amount of time between logging that we're not initialized
 const defaultUninitializedLog = time.Hour
 
+// The global flagset
 var globalMtx sync.RWMutex
 var globalFlagset *Flagset
 
-// This is only here for tests
+// This is the logger from globalFlagset, exposed globally for testing
 var globalLogger *throttledLogger
 
 // A logger for messages, but throttled to once every interval.
-// This way we can log that we're not initialized, but not spam all over
-// the logs.
+// This way we can log that we're not initialized, but not spam all over the logs.
 type throttledLogger struct {
 	mtx        sync.Mutex
 	interval   time.Duration
 	logger     *log.Logger
-	lastLogged time.Time
+	lastLogged time.Time // last time we logged a message
 }
 
+// Helper to log an error
 func (tl *throttledLogger) log(err error) {
 	tl.mtx.Lock()
 	defer tl.mtx.Unlock()
@@ -40,6 +42,7 @@ func (e ErrUninitialized) Error() string {
 	return "Goforit uninitialized, but feature flags are being checked"
 }
 
+// A backend that always returns an empty flag, with a note that we're not initialized
 type uninitializedBackend struct {
 	BackendBase
 }
@@ -48,6 +51,7 @@ func (*uninitializedBackend) Flag(name string) (Flag, time.Time, error) {
 	return SampleFlag{FlagName: name, Rate: 0}, time.Time{}, ErrUninitialized{}
 }
 
+// Helper to change the global flagset. Pass nil to revert to the default
 func swapGlobalFlagset(fs *Flagset) error {
 	var old *Flagset
 	func() {
@@ -67,6 +71,7 @@ func swapGlobalFlagset(fs *Flagset) error {
 		globalFlagset = fs
 	}()
 
+	// Make sure to close the old one
 	if old != nil && old != fs {
 		return old.Close()
 	}
@@ -89,7 +94,7 @@ func Init(backend Backend, opts ...Option) {
 	swapGlobalFlagset(fs)
 }
 
-// Close closes the global Flagset
+// Close closes the global Flagset, by reverting to the default
 func Close() error {
 	return swapGlobalFlagset(nil)
 }

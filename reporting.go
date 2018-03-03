@@ -53,17 +53,19 @@ type ErrBadTags struct {
 	tag  string
 }
 
-// AgeType is a type of age that could be reported
+// AgeType is a type of age that could be reported.
 type AgeType string
 
 const (
-	// AgeSource indicates the duration ago that a backend's source was updated.
+	// AgeSource indicates the duration ago that a backend's source was updated,
+	// logged whenever the backend updates its data.
 	// The source could be a file, network resource, etc.
 	AgeSource AgeType = "source"
 
 	// AgeBackend indicates the duration ago that a backend's data was updated,
-	// when Enabled is called.
-	// The underlying source of that data may still be stale.
+	// logged whenever Enabled is called.
+	//
+	// Even if this is recent, the underlying source of that data may still be stale.
 	AgeBackend AgeType = "backend"
 )
 

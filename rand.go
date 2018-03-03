@@ -5,7 +5,8 @@ import (
 	"sync"
 )
 
-// A random source that's safe for multi-threaded use
+// The default rand.Source is not thread-safe. Here's one with a mutex, so we can use it
+// concurrently.
 type concurrentSource struct {
 	src rand.Source
 	mtx sync.Mutex

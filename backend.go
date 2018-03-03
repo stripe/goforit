@@ -22,6 +22,7 @@ type Backend interface {
 	Close() error
 }
 
+// BackendBase implements common functionality that about every backend will need
 type BackendBase struct {
 	handlerMtx   sync.RWMutex
 	errorHandler ErrorHandler
@@ -34,6 +35,7 @@ func (b *BackendBase) SetErrorHandler(h ErrorHandler) {
 	b.errorHandler = h
 }
 
+// Handle a new error, by passing it to a callback
 func (b *BackendBase) handleError(err error) error {
 	b.handlerMtx.RLock()
 	defer b.handlerMtx.RUnlock()
@@ -49,6 +51,7 @@ func (b *BackendBase) SetAgeCallback(cb AgeCallback) {
 	b.ageCallback = cb
 }
 
+// Handle a new age value, by passing it to a callback
 func (b *BackendBase) handleAge(age time.Duration) {
 	b.handlerMtx.RLock()
 	defer b.handlerMtx.RUnlock()
@@ -62,7 +65,7 @@ func (b *BackendBase) Close() error {
 }
 
 // OffBackend is a backend where every flag is off.
-// Good for just turning off all logging.
+// Good for just turning off all logging, including errors, without truly initializing.
 type OffBackend struct {
 	BackendBase
 }

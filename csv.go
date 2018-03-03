@@ -38,6 +38,8 @@ func (f CsvFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 	return flags, time.Time{}, nil
 }
 
+// NewCsvBackend creates a new backend that reads from a CSV file, refreshing
+// on a timer.
 func NewCsvBackend(path string, refreshInterval time.Duration) Backend {
 	return NewFileBackend(path, CsvFileFormat{}, refreshInterval)
 }

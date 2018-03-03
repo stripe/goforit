@@ -13,21 +13,19 @@ import (
 type Flagset struct {
 	mtx         sync.RWMutex
 	backend     Backend
-	overrides   map[string]bool
+	overrides   map[string]bool // overridden flags
 	defaultTags map[string]string
 
 	// These are immutable after options are applied
 	random             *rand.Rand
 	maxStaleness       time.Duration
-	changedErrHandlers bool
+	changedErrHandlers bool // have we ever set a non-default handler?
 	errorHandlers      []ErrorHandler
 	ageCallbacks       []AgeCallback
 	checkCallbacks     []CheckCallback
-
-	// TODO: Special options for:
-	// - Use sentry for errors?
 }
 
+// Create a default logger
 func defaultLogger() *log.Logger {
 	return log.New(os.Stderr, "goforit error: ", log.LstdFlags)
 }
@@ -40,35 +38,46 @@ func New(backend Backend, opts ...Option) *Flagset {
 		random:      newRandom(time.Now().UnixNano()),
 	}
 
+	// Set the default error handler
 	fs.setLogger(defaultLogger())
 	fs.changedErrHandlers = false
 
+	// Apply options
 	for _, opt := range opts {
 		opt(fs)
 	}
+
+	// Initialize the backend
 	fs.setBackend(backend)
 	return fs
 }
 
+// Add an error handler to our list
 func (fs *Flagset) addErrHandler(handler ErrorHandler) {
+	// If the user specifies their first error handler, it overrides the default.
+	// Subsequent handlers will be appended.
 	if !fs.changedErrHandlers {
+		// This is the first custom one, clear our the list before adding it.
 		fs.errorHandlers = nil
 		fs.changedErrHandlers = true
 	}
 
 	if handler == nil {
+		// nil means get rid of all error handlers
 		fs.errorHandlers = nil
 	} else {
 		fs.errorHandlers = append(fs.errorHandlers, handler)
 	}
 }
 
+// Set a logger as an error handler
 func (fs *Flagset) setLogger(logger *log.Logger) {
 	fs.addErrHandler(func(err error) {
 		logger.Print(err)
 	})
 }
 
+// Initialize the backend
 func (fs *Flagset) setBackend(backend Backend) {
 	fs.mtx.Lock()
 	defer fs.mtx.Unlock()
@@ -110,10 +119,13 @@ func (fs *Flagset) Override(name string, enabled bool) {
 	fs.overrides[name] = enabled
 }
 
+// Helper to create an ErrInvalidTagList
 func invalidTags(f string, args ...interface{}) error {
 	return ErrInvalidTagList{fmt.Sprintf(f, args...)}
 }
 
+// mergeTags takes a list of arguments, and turns them into a tag-map.
+// See docs at Enabled.
 func mergeTags(args ...interface{}) (map[string]string, error) {
 	tags := map[string]string{}
 
@@ -159,16 +171,22 @@ func mergeTags(args ...interface{}) (map[string]string, error) {
 //    Enabled("myflag", map[string]string{"foo": "A"}, "bar", "B", map[string]string{"iggy": C"})
 //
 func (fs *Flagset) Enabled(name string, args ...interface{}) bool {
+	// Check the flag
 	enabled, lastMod := fs.enabled(name, args...)
+
+	// Register the new age metric
 	if !lastMod.IsZero() {
 		go fs.checkAge(AgeBackend, time.Now().Sub(lastMod))
 	}
+
+	// Apply check callbacks
 	for _, cb := range fs.checkCallbacks {
 		go cb(name, enabled)
 	}
 	return enabled
 }
 
+// Helper for Enabled, to fetch all the values that are lock-protected
 func (fs *Flagset) lockedValues(name string) (backend Backend, defaults map[string]string, hasOverride, override bool) {
 	fs.mtx.RLock()
 	defer fs.mtx.RUnlock()
@@ -185,20 +203,24 @@ func (fs *Flagset) lockedValues(name string) (backend Backend, defaults map[stri
 	return
 }
 
+// Helper for Enabled. This does all of the work, except age/check callbacks.
 func (fs *Flagset) enabled(name string, args ...interface{}) (bool, time.Time) {
+	// Figure out what tags were passed in
 	tags, err := mergeTags(args...)
 	if err != nil {
 		fs.handleError(err)
 		return false, time.Time{}
 	}
 
+	// Get all values protected by a lock
 	backend, mergedTags, hasOverride, override := fs.lockedValues(name)
 	if hasOverride {
 		return override, time.Time{}
 	}
 
+	// Check if we have a Flag
 	flag, lastMod, err := backend.Flag(name)
-	if err != nil {
+	if err != nil { // it's valid to have both an error and a flag, this is more like a warning
 		fs.handleError(err)
 	}
 	if flag == nil {
@@ -206,9 +228,12 @@ func (fs *Flagset) enabled(name string, args ...interface{}) (bool, time.Time) {
 		return false, lastMod
 	}
 
+	// Merge our tags with the defaults
 	for k, v := range tags {
 		mergedTags[k] = v
 	}
+
+	// Ask the flag if it's on or off
 	enabled, err := flag.Enabled(fs.random, mergedTags)
 	if err != nil {
 		fs.handleError(err)
@@ -216,15 +241,19 @@ func (fs *Flagset) enabled(name string, args ...interface{}) (bool, time.Time) {
 	return enabled, lastMod
 }
 
+// Respond to an age metric
 func (fs *Flagset) checkAge(at AgeType, age time.Duration) {
+	// Check if it's stale, and error
 	if fs.maxStaleness > 0 && fs.maxStaleness < age {
 		fs.handleError(ErrDataStale{age, fs.maxStaleness})
 	}
+	// Apply callbacks
 	for _, cb := range fs.ageCallbacks {
 		go cb(at, age)
 	}
 }
 
+// Apply error handlers
 func (fs *Flagset) handleError(err error) {
 	for _, handler := range fs.errorHandlers {
 		go handler(err)

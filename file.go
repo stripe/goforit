@@ -17,7 +17,7 @@ const shrinkMaxAmount = 10
 // A FileFormat knows how to read a file format
 type FileFormat interface {
 	// Read reads flags from the given file
-	// It yields a list of flags and the last modified time.
+	// It yields a list of flags and the last modified time, if it's determinable from the file contents.
 	// Returns empty time if it's unknown.
 	Read(io.Reader) ([]Flag, time.Time, error)
 }
@@ -77,7 +77,9 @@ type fileBackend struct {
 	ticker          *time.Ticker
 }
 
+// Refresh our data
 func (fb *fileBackend) refresh() error {
+	// Open our file
 	f, err := os.Open(fb.path)
 	if os.IsNotExist(err) {
 		return fb.handleError(ErrFileMissing{fb.path})
@@ -86,12 +88,13 @@ func (fb *fileBackend) refresh() error {
 	}
 	defer f.Close()
 
+	// Read and parse our data
 	flags, lastMod, err := fb.format.Read(f)
 	if err != nil {
 		return fb.handleError(ErrFileFormat{fb.path, err})
 	}
 
-	// Get a last-modified date from the file itself
+	// Get a last-modified date from the file itself, if we don't have one in the data
 	if lastMod.IsZero() {
 		stat, err := f.Stat()
 		if err != nil {
@@ -106,15 +109,18 @@ func (fb *fileBackend) refresh() error {
 		fmap[f.Name()] = f
 	}
 
+	// Swap old and new
 	fb.mtx.Lock()
 	defer fb.mtx.Unlock()
 	fb.lastMod = lastMod
 	old := fb.flags
 	fb.flags = fmap
 
+	// Handle the new age info
 	if !lastMod.IsZero() {
 		fb.handleAge(time.Now().Sub(lastMod))
 	}
+	// Check if we shrunk by an alarming amount
 	if len(old)-len(fmap) > shrinkMaxAmount && float64(len(fmap))/float64(len(old)) < shrinkMinFraction {
 		return fb.handleError(ErrFlagsShrunk{len(old), len(fmap)})
 	}
