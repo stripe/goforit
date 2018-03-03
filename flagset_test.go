@@ -126,7 +126,12 @@ func TestFlagsetDefaultTags(t *testing.T) {
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "k8s", "user": "bob"},
 		mb.lastTags)
 
-	err := fs.AddDefaultTags(map[string]string{"extra": "42"})
+	err := fs.AddDefaultTags("a")
+	assert.Error(t, err)
+	fs.Enabled("a")
+	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit"}, mb.lastTags)
+
+	err = fs.AddDefaultTags(map[string]string{"extra": "42"})
 	assert.NoError(t, err)
 	fs.Enabled("a")
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit", "extra": "42"},
