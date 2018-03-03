@@ -20,7 +20,7 @@ func TestGlobalThrottledLogger(t *testing.T) {
 		interval: 10 * time.Millisecond,
 	}
 
-	stop := time.After(35 * time.Millisecond)
+	stop := time.After(50 * time.Millisecond)
 LOOP:
 	for {
 		select {
@@ -32,7 +32,7 @@ LOOP:
 	}
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	assert.Equal(t, 4, len(lines))
+	assert.InDelta(t, 5, len(lines), 1)
 	for _, line := range lines {
 		assert.Contains(t, line, "testmsg")
 	}

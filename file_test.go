@@ -142,6 +142,7 @@ func TestFileBackendFileRefresh(t *testing.T) {
 	assert.Nil(t, flag)
 	prevMod := lastMod
 
+	time.Sleep(80 * time.Millisecond)
 	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
 	time.Sleep(80 * time.Millisecond)
 	flag, lastMod, err = backend.Flag("go.sun.money")
