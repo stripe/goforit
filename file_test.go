@@ -256,7 +256,7 @@ func TestFileBackendMissing(t *testing.T) {
 	// Remove the file, errors should occur
 	err = os.Remove(file.Name())
 	assert.NoError(t, err)
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(120 * time.Millisecond)
 	func() {
 		mtx.Lock()
 		defer mtx.Unlock()
