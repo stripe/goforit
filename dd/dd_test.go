@@ -101,9 +101,9 @@ func TestDDIntegration(t *testing.T) {
 	fs := goforit.New(backend, addStatsd(stats, nil))
 	defer fs.Close()
 
-	fs.Enabled("a", nil)
-	fs.Enabled("a", nil)
-	fs.Enabled("b", nil)
+	fs.Enabled("a")
+	fs.Enabled("a")
+	fs.Enabled("b")
 	time.Sleep(100 * time.Millisecond)
 
 	stats.mtx.Lock()

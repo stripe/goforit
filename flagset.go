@@ -1,6 +1,7 @@
 package goforit
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"os"
@@ -86,13 +87,19 @@ func (fs *Flagset) Close() error {
 
 // AddDefaultTags adds tags that will be automatically added to every call to Enabled.
 // This is useful for properties of the current host or process, which never change.
-func (fs *Flagset) AddDefaultTags(tags map[string]string) {
+func (fs *Flagset) AddDefaultTags(args ...interface{}) error {
+	tags, err := mergeTags(args...)
+	if err != nil {
+		return err
+	}
+
 	fs.mtx.Lock()
 	defer fs.mtx.Unlock()
 
 	for k, v := range tags {
 		fs.defaultTags[k] = v
 	}
+	return nil
 }
 
 // Override forces the status of a flag on or off. It's mainly useful for testing.
@@ -103,10 +110,56 @@ func (fs *Flagset) Override(name string, enabled bool) {
 	fs.overrides[name] = enabled
 }
 
-// Enabled checks whether a flag is enabled, given a set of tags.
-// Flags can potentially vary their status according to the tags.
-func (fs *Flagset) Enabled(name string, tags map[string]string) bool {
-	enabled, lastMod := fs.enabled(name, tags)
+func invalidTags(f string, args ...interface{}) error {
+	return ErrInvalidTagList{fmt.Sprintf(f, args...)}
+}
+
+func mergeTags(args ...interface{}) (map[string]string, error) {
+	tags := map[string]string{}
+
+	var key string
+	for _, arg := range args {
+		if key != "" {
+			// Look for a value string
+			if value, ok := arg.(string); ok {
+				tags[key] = value
+				key = ""
+			} else {
+				return nil, invalidTags("Key '%s' must be followed by a string value, not %T\n", key, arg)
+			}
+		} else {
+			// Look for the start of a sequence
+			switch a := arg.(type) {
+			case string:
+				key = a
+			case map[string]string:
+				for k, v := range a {
+					tags[k] = v
+				}
+			default:
+				return nil, invalidTags("Unknown tag argument %q of type %T", arg, arg)
+			}
+		}
+	}
+
+	if key != "" {
+		return nil, invalidTags("Key '%s' must be followed by a string value, not end of list", key)
+	}
+	return tags, nil
+}
+
+// Enabled checks whether a flag is enabled.
+// Flags can potentially vary their status according to the tags provided.
+//
+// To specify tags, provide either a map[string]string, or key-value pairs. You can also mix the
+// two, and they'll be merged. Eg:
+//
+//    Enabled("myflag", map[string]string{"foo": "A", "bar": "B"})
+//    Enabled("myflag", "foo", "A", "bar", "B")
+//    Enabled("myflag", map[string]string{"foo": "A"}, "bar", "B", map[string]string{"iggy": C"})
+//
+func (fs *Flagset) Enabled(name string, args ...interface{}) bool {
+	enabled, lastMod := fs.enabled(name, args...)
 	if !lastMod.IsZero() {
 		go fs.checkAge(AgeBackend, time.Now().Sub(lastMod))
 	}
@@ -132,7 +185,13 @@ func (fs *Flagset) lockedValues(name string) (backend Backend, defaults map[stri
 	return
 }
 
-func (fs *Flagset) enabled(name string, tags map[string]string) (bool, time.Time) {
+func (fs *Flagset) enabled(name string, args ...interface{}) (bool, time.Time) {
+	tags, err := mergeTags(args...)
+	if err != nil {
+		fs.handleError(err)
+		return false, time.Time{}
+	}
+
 	backend, mergedTags, hasOverride, override := fs.lockedValues(name)
 	if hasOverride {
 		return override, time.Time{}

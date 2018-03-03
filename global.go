@@ -96,8 +96,8 @@ func Close() error {
 
 // AddDefaultTags adds tags that will be automatically added to every call to Enabled.
 // This is useful for properties of the current host or process, which never change.
-func AddDefaultTags(tags map[string]string) {
-	getGlobalFlagset().AddDefaultTags(tags)
+func AddDefaultTags(args ...interface{}) error {
+	return getGlobalFlagset().AddDefaultTags(args...)
 }
 
 // Override forces the status of a flag on or off. It's mainly useful for testing.
@@ -107,6 +107,6 @@ func Override(name string, enabled bool) {
 
 // Enabled checks whether a flag is enabled, given a set of tags.
 // Flags can potentially vary their status according to the tags.
-func Enabled(name string, tags map[string]string) bool {
-	return getGlobalFlagset().Enabled(name, tags)
+func Enabled(name string, args ...interface{}) bool {
+	return getGlobalFlagset().Enabled(name, args...)
 }

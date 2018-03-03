@@ -13,11 +13,11 @@ func Example() {
 	goforit.Init(backend)
 	defer goforit.Close()
 
-	if goforit.Enabled("go.sun.mercury", map[string]string{"tag": "value"}) {
+	if goforit.Enabled("go.sun.mercury", "tag", "value") {
 		fmt.Println("The go.sun.mercury feature is enabled")
 	}
 
-	if goforit.Enabled("go.sun.mercury", nil) {
+	if goforit.Enabled("go.sun.mercury") {
 		fmt.Println("The go.sun.mercury feature is enabled")
 	}
 }

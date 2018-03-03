@@ -138,15 +138,16 @@ func TestFileBackendFileRefresh(t *testing.T) {
 	defer backend.Close()
 
 	flag, lastMod, err := backend.Flag("go.sun.money")
+	println("lastMod")
 	assert.NoError(t, err)
 	assert.Nil(t, flag)
 	prevMod := lastMod
 
-	time.Sleep(80 * time.Millisecond)
 	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
 	time.Sleep(80 * time.Millisecond)
 	flag, lastMod, err = backend.Flag("go.sun.money")
 	assert.NoError(t, err)
+	fmt.Printf("%q   %q\n", lastMod, prevMod)
 	assert.True(t, lastMod.After(prevMod))
 	require.NotNil(t, flag)
 	enabled, err := flag.Enabled(rnd, nil)

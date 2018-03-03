@@ -34,6 +34,19 @@ func (e ErrDataStale) IsCritical() bool {
 	return true
 }
 
+// ErrInvalidTagList indicates that the user specified an invalid tag list in Enabled.
+// For example:
+//
+//    Enabled("myflag", 1)
+//
+type ErrInvalidTagList struct {
+	Message string
+}
+
+func (e ErrInvalidTagList) Error() string {
+	return fmt.Sprintf("Invalid tag list: %s", e.Message)
+}
+
 // TODO: We don't actually use this yet
 type ErrBadTags struct {
 	flag string

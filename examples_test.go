@@ -9,11 +9,11 @@ func Example() {
 	Init(backend)
 	defer Close()
 
-	if Enabled("go.sun.mercury", map[string]string{"tag": "value"}) {
+	if Enabled("go.sun.mercury", "tag", "value") {
 		fmt.Println("The go.sun.mercury feature is enabled")
 	}
 
-	if Enabled("go.sun.mercury", nil) {
+	if Enabled("go.sun.mercury") {
 		fmt.Println("The go.sun.mercury feature is enabled")
 	}
 }

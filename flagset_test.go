@@ -72,7 +72,7 @@ func TestFlagset(t *testing.T) {
 	fs := New(mb, SuppressErrors())
 	defer fs.Close()
 
-	en := fs.Enabled("foo", nil)
+	en := fs.Enabled("foo")
 	assert.True(t, en)
 	assert.Equal(t, map[string]string{}, mb.lastTags)
 
@@ -96,16 +96,16 @@ func TestFlagsetOverrides(t *testing.T) {
 	// Can override with options
 	fs := New(mb, OverrideFlags("a", false, "d", true))
 	defer fs.Close()
-	assert.False(t, fs.Enabled("a", nil))
-	assert.False(t, fs.Enabled("b", nil))
-	assert.False(t, fs.Enabled("c", nil))
-	assert.True(t, fs.Enabled("d", nil)) // including things that didn't exist before
+	assert.False(t, fs.Enabled("a"))
+	assert.False(t, fs.Enabled("b"))
+	assert.False(t, fs.Enabled("c"))
+	assert.True(t, fs.Enabled("d")) // including things that didn't exist before
 
 	// Can override later on, including over other overrides
 	fs.Override("c", true)
-	assert.True(t, fs.Enabled("c", nil))
+	assert.True(t, fs.Enabled("c"))
 	fs.Override("c", false)
-	assert.False(t, fs.Enabled("c", nil))
+	assert.False(t, fs.Enabled("c"))
 }
 
 func TestFlagsetDefaultTags(t *testing.T) {
@@ -117,7 +117,7 @@ func TestFlagsetDefaultTags(t *testing.T) {
 	fs := New(mb, Tags(map[string]string{"cluster": "south", "hosttype": "goforit"}))
 	defer fs.Close()
 
-	fs.Enabled("a", nil)
+	fs.Enabled("a")
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit"}, mb.lastTags)
 	fs.Enabled("a", map[string]string{"user": "bob"})
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit", "user": "bob"},
@@ -126,9 +126,17 @@ func TestFlagsetDefaultTags(t *testing.T) {
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "k8s", "user": "bob"},
 		mb.lastTags)
 
-	fs.AddDefaultTags(map[string]string{"extra": "42"})
-	fs.Enabled("a", nil)
+	err := fs.AddDefaultTags(map[string]string{"extra": "42"})
+	assert.NoError(t, err)
+	fs.Enabled("a")
 	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit", "extra": "42"},
+		mb.lastTags)
+
+	err = fs.AddDefaultTags("a", "1", "b", "2")
+	assert.NoError(t, err)
+	fs.Enabled("a")
+	assert.Equal(t, map[string]string{"cluster": "south", "hosttype": "goforit", "extra": "42",
+		"a": "1", "b": "2"},
 		mb.lastTags)
 }
 
@@ -161,18 +169,18 @@ func TestFlagsetUnknownFlag(t *testing.T) {
 	fs := New(mb, OnError(me.set))
 	defer fs.Close()
 
-	en := fs.Enabled("myflag", nil)
+	en := fs.Enabled("myflag")
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 
-	en = fs.Enabled("otherflag", nil)
+	en = fs.Enabled("otherflag")
 	assert.False(t, en)
 	err := me.get()
 	assert.Error(t, err)
 	assert.IsType(t, ErrUnknownFlag{}, err)
 	assert.Contains(t, err.Error(), "otherflag")
 
-	en = fs.Enabled("yaflag", nil)
+	en = fs.Enabled("yaflag")
 	assert.False(t, en)
 	err = me.get()
 	assert.Error(t, err)
@@ -180,7 +188,7 @@ func TestFlagsetUnknownFlag(t *testing.T) {
 	assert.Contains(t, err.Error(), "yaflag")
 
 	me.set(nil)
-	en = fs.Enabled("myflag", nil)
+	en = fs.Enabled("myflag")
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 }
@@ -196,14 +204,14 @@ func TestFlagsetStale(t *testing.T) {
 	defer fs.Close()
 
 	// Old times are fine if we have no maxStaleness
-	en := fs.Enabled("myflag", nil)
+	en := fs.Enabled("myflag")
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 
 	fs.Close()
 	fs = New(mb, OnError(me.set), MaxStaleness(time.Minute+2*time.Second))
 
-	en = fs.Enabled("myflag", nil)
+	en = fs.Enabled("myflag")
 	assert.True(t, en) // stale data doesn't stop flags working
 	err := me.get()
 	assert.Error(t, err)
@@ -212,7 +220,7 @@ func TestFlagsetStale(t *testing.T) {
 
 	me.set(nil)
 	mb.lastMod = time.Now()
-	en = fs.Enabled("myflag", nil)
+	en = fs.Enabled("myflag")
 	assert.True(t, en)
 	assert.NoError(t, me.get())
 }
@@ -255,7 +263,7 @@ func TestFlagsetErrors(t *testing.T) {
 	fs := New(mb, OnError(me.set))
 	defer fs.Close()
 
-	en := fs.Enabled("a", nil)
+	en := fs.Enabled("a")
 	assert.False(t, en)
 	errs := me.get()
 	assert.Equal(t, 1, len(errs))
@@ -263,7 +271,7 @@ func TestFlagsetErrors(t *testing.T) {
 	assert.Contains(t, errs[0].Error(), "errA")
 	me.clear()
 
-	en = fs.Enabled("c", nil)
+	en = fs.Enabled("c")
 	assert.True(t, en) // Can be both error and have flag on. Eg: warnings
 	errs = me.get()
 	assert.Equal(t, 1, len(errs))
@@ -272,7 +280,7 @@ func TestFlagsetErrors(t *testing.T) {
 	me.clear()
 
 	mb.err = errors.New("backendErr")
-	en = fs.Enabled("b", nil)
+	en = fs.Enabled("b")
 	assert.True(t, en)
 	errs = me.get()
 	assert.Equal(t, 1, len(errs))
@@ -280,7 +288,7 @@ func TestFlagsetErrors(t *testing.T) {
 	assert.Contains(t, errs[0].Error(), "backendErr")
 	me.clear()
 
-	en = fs.Enabled("d", nil)
+	en = fs.Enabled("d")
 	assert.False(t, en)
 	errs = me.get()
 	assert.Equal(t, 1, len(errs))
@@ -289,7 +297,7 @@ func TestFlagsetErrors(t *testing.T) {
 	me.clear()
 
 	// Multiple errors!
-	en = fs.Enabled("e", nil)
+	en = fs.Enabled("e")
 	assert.False(t, en)
 	errs = me.get()
 	assert.Equal(t, 2, len(errs))
@@ -326,13 +334,13 @@ func TestFlagsetCheckCallbacks(t *testing.T) {
 	}))
 	defer fs.Close()
 
-	fs.Enabled("a", nil)
-	fs.Enabled("b", nil)
-	fs.Enabled("b", nil)
-	fs.Enabled("c", nil)
-	fs.Enabled("d", nil)
+	fs.Enabled("a")
+	fs.Enabled("b")
+	fs.Enabled("b")
+	fs.Enabled("c")
+	fs.Enabled("d")
 	mb.setFlag("b", mbFlag{value: true})
-	fs.Enabled("b", nil)
+	fs.Enabled("b")
 
 	time.Sleep(20 * time.Millisecond)
 	assert.Equal(t, 5, len(results))
@@ -361,20 +369,20 @@ func TestFlagsetAge(t *testing.T) {
 	defer fs.Close()
 
 	// When lastMod is zero, no ages recorded
-	fs.Enabled("a", nil)
+	fs.Enabled("a")
 	time.Sleep(20 * time.Millisecond)
 	assert.Empty(t, ages)
 
 	mb.lastMod = time.Now().Add(-10 * time.Second)
-	fs.Enabled("a", nil)
-	fs.Enabled("a", nil)
+	fs.Enabled("a")
+	fs.Enabled("a")
 	time.Sleep(20 * time.Millisecond)
 	assert.Equal(t, 2, len(ages))
 	assert.InDelta(t, 10, ages[1].Seconds(), 2)
 
 	mb.lastMod = time.Now()
-	fs.Enabled("a", nil)
-	fs.Enabled("a", nil)
+	fs.Enabled("a")
+	fs.Enabled("a")
 	time.Sleep(20 * time.Millisecond)
 	assert.Equal(t, 4, len(ages))
 	assert.InDelta(t, 0, ages[3].Seconds(), 2)
@@ -399,9 +407,9 @@ func TestFlagsetBackendCallbacks(t *testing.T) {
 		}))
 	defer fs.Close()
 
-	fs.Enabled("a", nil)
-	fs.Enabled("a", nil)
-	fs.Enabled("a", nil)
+	fs.Enabled("a")
+	fs.Enabled("a")
+	fs.Enabled("a")
 	mb.handleError(errors.New("foo"))
 	mb.handleAge(2 * time.Second)
 	time.Sleep(40 * time.Millisecond)
@@ -423,7 +431,7 @@ func TestFlagsetLogger(t *testing.T) {
 	fs := New(mb, LogErrors(log.New(&buf, "myprefix", log.LstdFlags)))
 	defer fs.Close()
 
-	fs.Enabled("fakeflag", nil)
+	fs.Enabled("fakeflag")
 	time.Sleep(80 * time.Millisecond)
 	s := string(buf.Bytes())
 
@@ -454,12 +462,12 @@ func TestFlagsetEndToEnd(t *testing.T) {
 
 	internal.AtomicWriteFile(t, tmp, "myflag,0")
 	time.Sleep(80 * time.Millisecond)
-	assert.Equal(t, false, fs.Enabled("myflag", nil))
+	assert.Equal(t, false, fs.Enabled("myflag"))
 
 	internal.AtomicWriteFile(t, tmp, "myflag,1")
 	time.Sleep(80 * time.Millisecond)
-	assert.Equal(t, true, fs.Enabled("myflag", nil))
-	assert.Equal(t, false, fs.Enabled("fakeflag", nil))
+	assert.Equal(t, true, fs.Enabled("myflag"))
+	assert.Equal(t, false, fs.Enabled("fakeflag"))
 	time.Sleep(80 * time.Millisecond)
 
 	s := string(buf.Bytes())
@@ -510,9 +518,9 @@ func TestFlagsetSeed(t *testing.T) {
 	match12 := 0
 	match13 := 0
 	for i := 0; i < 10000; i++ {
-		e1 := gi1.Enabled("a", nil)
-		e2 := gi2.Enabled("a", nil)
-		e3 := gi3.Enabled("a", nil)
+		e1 := gi1.Enabled("a")
+		e2 := gi2.Enabled("a")
+		e3 := gi3.Enabled("a")
 		if e1 == e2 {
 			match12++
 		}
@@ -535,8 +543,76 @@ func TestFlagsetMultipleHandlers(t *testing.T) {
 	fs := New(mb, OnError(me.set), OnError(me2.set))
 	defer fs.Close()
 
-	en := fs.Enabled("a", nil)
+	en := fs.Enabled("a")
 	assert.False(t, en)
 	assert.Contains(t, me.get().Error(), "errA")
 	assert.Contains(t, me2.get().Error(), "errA")
+}
+
+func TestMergeTags(t *testing.T) {
+	t.Parallel()
+
+	tags, err := mergeTags()
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{}, tags)
+
+	tags, err = mergeTags("a", "b")
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "b"}, tags)
+
+	tags, err = mergeTags("a", "b", "c", "d")
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "b", "c": "d"}, tags)
+
+	tags, err = mergeTags("a", "b", "c", "d", "a", "e")
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "e", "c": "d"}, tags)
+
+	tags, err = mergeTags(map[string]string{})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{}, tags)
+
+	tags, err = mergeTags(map[string]string{"a": "b", "c": "d"})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "b", "c": "d"}, tags)
+
+	tags, err = mergeTags(map[string]string{"a": "b"}, "c", "d")
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "b", "c": "d"}, tags)
+
+	tags, err = mergeTags("a", "b", map[string]string{"c": "d"})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "b", "c": "d"}, tags)
+
+	tags, err = mergeTags("a", "b", map[string]string{"a": "c"})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "c"}, tags)
+
+	tags, err = mergeTags(map[string]string{"a": "b"}, map[string]string{"c": "d", "a": "e"})
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "e", "c": "d"}, tags)
+
+	tags, err = mergeTags(
+		map[string]string{"a": "b", "c": "d"},
+		"e", "f",
+		map[string]string{"c": "g"},
+		"h", "i", "c", "k",
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "b", "c": "k", "e": "f", "h": "i"}, tags)
+
+	tags, err = mergeTags("a")
+	assert.Error(t, err)
+	assert.IsType(t, ErrInvalidTagList{}, err)
+	assert.Contains(t, err.Error(), "end of list")
+
+	tags, err = mergeTags("a", map[string]string{"b": "c"})
+	assert.Error(t, err)
+	assert.IsType(t, ErrInvalidTagList{}, err)
+	assert.Contains(t, err.Error(), "followed by")
+
+	tags, err = mergeTags(1, 2)
+	assert.Error(t, err)
+	assert.IsType(t, ErrInvalidTagList{}, err)
+	assert.Contains(t, err.Error(), "Unknown tag argument")
 }

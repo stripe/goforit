@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Write a file atomically, for testing purposes
 func AtomicWriteFile(t *testing.T, f *os.File, s string) {
 	tmp, err := ioutil.TempFile(filepath.Dir(f.Name()), "goforit-")
 	require.NoError(t, err)
