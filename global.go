@@ -3,37 +3,19 @@ package goforit
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// Minimum amount of time between logging that we're not initialized
-const defaultUninitializedLog = time.Hour
+// Minimum amount of time between logging that we're not initialized.
+// If a program doesn't have a backend, we don't want to log on each call to Enabled,
+// that would be nuts.
+const defaultUninitializedInterval = time.Hour
 
 // The global flagset
 var globalMtx sync.RWMutex
 var globalFlagset *Flagset
-
-// This is the logger from globalFlagset, exposed globally for testing
-var globalLogger *throttledLogger
-
-// A logger for messages, but throttled to once every interval.
-// This way we can log that we're not initialized, but not spam all over the logs.
-type throttledLogger struct {
-	mtx        sync.Mutex
-	interval   time.Duration
-	logger     *log.Logger
-	lastLogged time.Time // last time we logged a message
-}
-
-// Helper to log an error
-func (tl *throttledLogger) log(err error) {
-	tl.mtx.Lock()
-	defer tl.mtx.Unlock()
-	if time.Now().Sub(tl.lastLogged) > tl.interval {
-		tl.logger.Print(err)
-		tl.lastLogged = time.Now()
-	}
-}
+var globalLogger atomic.Value // for tests
 
 // ErrUninitialized is used when goforit hasn't been initialized
 type ErrUninitialized struct{}
@@ -42,29 +24,48 @@ func (e ErrUninitialized) Error() string {
 	return "Goforit uninitialized, but feature flags are being checked"
 }
 
-// A backend that always returns an empty flag, with a note that we're not initialized
+// A backend that always returns an empty flag. Every so often, it alerts that we're
+// not initialized.
 type uninitializedBackend struct {
 	BackendBase
+
+	mtx       sync.Mutex
+	interval  time.Duration
+	lastError time.Time
 }
 
-func (*uninitializedBackend) Flag(name string) (Flag, time.Time, error) {
-	return SampleFlag{FlagName: name, Rate: 0}, time.Time{}, ErrUninitialized{}
+func (u *uninitializedBackend) Flag(name string) (Flag, time.Time, error) {
+	u.mtx.Lock()
+	defer u.mtx.Unlock()
+
+	var err error
+
+	// Only return an error if it's been a long time
+	t := time.Now()
+	if t.Sub(u.lastError) > u.interval {
+		err = ErrUninitialized{}
+		u.lastError = t
+	}
+
+	return SampleFlag{FlagName: name, Rate: 0}, time.Time{}, err
 }
 
-// Helper to change the global flagset. Pass nil to revert to the default
+// Helper to change the global Flagset. Pass nil to revert to the default
 func swapGlobalFlagset(fs *Flagset) error {
 	var old *Flagset
+
+	// Swap in the new Flagset
 	func() {
 		globalMtx.Lock()
 		defer globalMtx.Unlock()
 
 		if fs == nil {
-			// A nice default that does ~nothing, and logs every so often
-			globalLogger = &throttledLogger{
-				logger:   defaultLogger(),
-				interval: defaultUninitializedLog,
-			}
-			fs = New(&uninitializedBackend{}, OnError(globalLogger.log))
+			// Use a backend that warns every hour.
+			// Use an error handler that can swap out its logger, for testability.
+			globalLogger.Store(defaultLogger())
+			fs = New(&uninitializedBackend{interval: defaultUninitializedInterval}, OnError(func(err error) {
+				globalLogger.Load().(*log.Logger).Print(err)
+			}))
 		}
 
 		old = globalFlagset

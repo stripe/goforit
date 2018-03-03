@@ -2,104 +2,93 @@ package goforit
 
 import (
 	"bytes"
-	"errors"
+	"io"
+	"io/ioutil"
 	"log"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// Test that the throttled logger really is throttled
-func TestGlobalThrottledLogger(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	tl := throttledLogger{
-		logger:   log.New(&buf, "", log.LstdFlags),
-		interval: 20 * time.Millisecond, // throttle to once every 20ms
-	}
-
-	// Attempt to log as fast as we can
-	stop := time.After(200 * time.Millisecond)
-LOOP:
-	for {
-		select {
-		case <-stop:
-			break LOOP
-		default:
-			tl.log(errors.New("testmsg"))
-		}
-	}
-
-	// Should only have ~10 logs that are allowed through
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	assert.InDelta(t, 10, len(lines), 2)
-	for _, line := range lines {
-		assert.Contains(t, line, "testmsg")
-	}
+// Reset the warning that we're not initialized, so we can get new warnings without waiting an hour
+func resetUninitializedWarning() {
+	fs := getGlobalFlagset()
+	backend := fs.backend.(*uninitializedBackend)
+	backend.mtx.Lock()
+	defer backend.mtx.Unlock()
+	backend.lastError = time.Time{}
 }
 
-// Reset the time of the global throttledLogger, so we can get new warnings without waiting an hour
-func resetGlobalLoggerTime() {
-	globalMtx.RLock()
-	defer globalMtx.RUnlock()
+// Count global log messages
+func countGlobalLogs(t *testing.T, block func()) int {
+	r, w := io.Pipe()
 
-	logger := globalLogger
-	logger.mtx.Lock()
-	defer logger.mtx.Unlock()
-	logger.lastLogged = time.Time{}
+	origLogger := globalLogger.Load()
+	globalLogger.Store(log.New(w, "", log.LstdFlags))
+	defer globalLogger.Store(origLogger)
+
+	go func() {
+		block()
+		time.Sleep(20 * time.Millisecond) // wait for handler goroutines
+		globalLogger.Store(origLogger)
+		w.Close()
+	}()
+
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	return bytes.Count(buf, []byte("\n"))
 }
 
-// Capture the output of the global logger
-func captureGlobalLogger() *bytes.Buffer {
-	globalMtx.RLock()
-	defer globalMtx.RUnlock()
-
-	logger := globalLogger
-	logger.mtx.Lock()
-	defer logger.mtx.Unlock()
-
-	buf := &bytes.Buffer{}
-	logger.logger = log.New(buf, "", log.LstdFlags)
-	return buf
-}
-
-// Test the behaviour of the global Flagset when uninitialized
-func TestGlobalUninitialized(t *testing.T) {
+// Test that we don't warn many times
+func TestGlobalUninitializedOnce(t *testing.T) {
 	// No parallel, uses global state
 	defer Close() // to reset state
 
-	buf := captureGlobalLogger()
+	count := countGlobalLogs(t, func() {
+		// Can call enabled, and should always get false
+		en := Enabled("a")
+		assert.False(t, en)
 
-	// Can call enabled, and should always get false
-	en := Enabled("a")
-	assert.False(t, en)
+		// Should get only one error per time period. These won't error.
+		Enabled("b")
+		Enabled("b")
+		Enabled("b")
+	})
+	assert.Equal(t, 1, count)
+}
 
-	// Should get only one error per time period. These won't error.
-	Enabled("b")
-	Enabled("b")
-	Enabled("b")
-	time.Sleep(20 * time.Millisecond) // wait for goroutines
+// Test that we warn again once time has elapsed
+func TestGlobalUninitializedElapsed(t *testing.T) {
+	// No parallel, uses global state
+	defer Close() // to reset state
 
-	// If we simulate another time period, we'll get another warning
-	resetGlobalLoggerTime()
-	Enabled("c")
-	time.Sleep(20 * time.Millisecond) // wait for warnings
+	count := countGlobalLogs(t, func() {
+		// Can call enabled, and should always get false
+		Enabled("a")
+		Enabled("a")
+		Enabled("a")
 
-	// Overrides shouldn't log, even in a new time period
-	resetGlobalLoggerTime()
-	Override("d", true)
-	Enabled("d")
-	time.Sleep(20 * time.Millisecond) // wait for warnings
+		// Simulate elapsed time, and log again
+		resetUninitializedWarning()
+		Enabled("b")
+		Enabled("b")
+		Enabled("b")
+	})
+	assert.Equal(t, 2, count)
+}
 
-	// Two logged errors, from "a" and "c"
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	assert.Equal(t, 2, len(lines))
-	for _, line := range lines {
-		assert.Contains(t, line, "uninitialized")
-	}
+// Test that overridden flags don't warn
+func TestGlobalUninitializedOverrides(t *testing.T) {
+	// No parallel, uses global state
+	defer Close() // to reset state
+
+	count := countGlobalLogs(t, func() {
+		Override("d", true)
+		Enabled("d")
+	})
+	assert.Equal(t, 0, count)
 }
 
 // Test that we can suppress errors globally
@@ -107,13 +96,11 @@ func TestGlobalSuppressErrors(t *testing.T) {
 	// No parallel, changes global state
 	defer Close() // to reset state
 
-	buf := captureGlobalLogger()
-
-	Init(&mockBackend{}, SuppressErrors())
-	Enabled("a", nil)
-
-	time.Sleep(20 * time.Millisecond) // wait for warnings
-	assert.Equal(t, "", buf.String()) // get nothing
+	count := countGlobalLogs(t, func() {
+		Init(&mockBackend{}, SuppressErrors())
+		Enabled("a", nil) // flag doesn't exist, would normally error
+	})
+	assert.Equal(t, 0, count)
 }
 
 // Test normal use of the global Flagset, the way this library should typically be used

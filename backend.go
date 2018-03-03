@@ -63,13 +63,3 @@ func (b *BackendBase) handleAge(age time.Duration) {
 func (b *BackendBase) Close() error {
 	return nil
 }
-
-// OffBackend is a backend where every flag is off.
-// Good for just turning off all logging, including errors, without truly initializing.
-type OffBackend struct {
-	BackendBase
-}
-
-func (*OffBackend) Flag(name string) (Flag, time.Time, error) {
-	return SampleFlag{FlagName: name, Rate: 0}, time.Time{}, nil
-}

@@ -160,7 +160,7 @@ func TestFileBackendFileRefresh(t *testing.T) {
 	prevMod := lastMod
 
 	// Go sometimes writes both temp files with the same mtime. Prevent that by waiting a bit.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	// Write some flags, and wait for refresh
 	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
