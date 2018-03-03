@@ -23,27 +23,24 @@ func MaxStaleness(duration time.Duration) Option {
 }
 
 // OnError specifies a callback for errors
+// Pass nil to remove all error handlers
 func OnError(h ErrorHandler) Option {
 	return func(fs *Flagset) {
-		if h == nil {
-			fs.errorHandler = func(error) {}
-		} else {
-			fs.errorHandler = h
-		}
+		fs.addErrHandler(h)
 	}
 }
 
 // OnAge specifies a callback for flag data age
 func OnAge(h AgeCallback) Option {
 	return func(fs *Flagset) {
-		fs.ageCallback = h
+		fs.ageCallbacks = append(fs.ageCallbacks, h)
 	}
 }
 
 // OnCheck specifies a callback for every called to Enabled
 func OnCheck(h CheckCallback) Option {
 	return func(fs *Flagset) {
-		fs.checkCallback = h
+		fs.checkCallbacks = append(fs.checkCallbacks, h)
 	}
 }
 
@@ -72,6 +69,7 @@ func OverrideFlags(args ...interface{}) Option {
 }
 
 // LogErrors sets a logger as the error handler
+// Pass nil to use a default logger
 func LogErrors(logger *log.Logger) Option {
 	return func(fs *Flagset) {
 		fs.setLogger(logger)
@@ -80,7 +78,5 @@ func LogErrors(logger *log.Logger) Option {
 
 // SuppressErrors causes errors to be hidden
 func SuppressErrors() Option {
-	return func(fs *Flagset) {
-		fs.errorHandler = func(error) {}
-	}
+	return OnError(nil)
 }

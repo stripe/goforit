@@ -32,6 +32,10 @@ func (e ErrFileMissing) Error() string {
 	return fmt.Sprintf("Missing flag file: file=%s", e.Path)
 }
 
+func (e ErrFileMissing) IsCritical() bool {
+	return true
+}
+
 // ErrFileFormat indicates an error parsing a file
 type ErrFileFormat struct {
 	Path  string
@@ -41,6 +45,10 @@ type ErrFileFormat struct {
 // Error yields the error message for ErrFileFormat
 func (e ErrFileFormat) Error() string {
 	return fmt.Sprintf("Error parsing flag file: file=%s: err=%s", e.Path, e.Cause.Error())
+}
+
+func (e ErrFileFormat) IsCritical() bool {
+	return true
 }
 
 // ErrFlagsShrunk indicates that the number of flags decreased by an unlikely amount.

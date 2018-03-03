@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stripe/goforit/refactor/internal"
 )
 
 type mbFlag struct {
@@ -68,7 +69,7 @@ func TestFlagset(t *testing.T) {
 	mb.setFlag("foo", mbFlag{value: true})
 	mb.setFlag("bar", mbFlag{value: false})
 
-	fs := New(mb, OnError(nil))
+	fs := New(mb, SuppressErrors())
 	defer fs.Close()
 
 	en := fs.Enabled("foo", nil)
@@ -317,7 +318,7 @@ func TestFlagsetCheckCallbacks(t *testing.T) {
 	var mtx sync.Mutex
 	results := map[enabledResult]int{}
 
-	fs := New(mb, OverrideFlags("c", true), OnError(nil), OnCheck(func(f string, e bool) {
+	fs := New(mb, OverrideFlags("c", true), SuppressErrors(), OnCheck(func(f string, e bool) {
 		mtx.Lock()
 		defer mtx.Unlock()
 		r := enabledResult{f, e}
@@ -447,15 +448,15 @@ func TestFlagsetEndToEnd(t *testing.T) {
 	defer fs.Close()
 	// No file yet, we should get file-missing errors
 
-	atomicWriteFile(t, tmp, "myflag,XXX")
+	internal.AtomicWriteFile(t, tmp, "myflag,XXX")
 	time.Sleep(80 * time.Millisecond)
 	// Now we should get parse-failure messages
 
-	atomicWriteFile(t, tmp, "myflag,0")
+	internal.AtomicWriteFile(t, tmp, "myflag,0")
 	time.Sleep(80 * time.Millisecond)
 	assert.Equal(t, false, fs.Enabled("myflag", nil))
 
-	atomicWriteFile(t, tmp, "myflag,1")
+	internal.AtomicWriteFile(t, tmp, "myflag,1")
 	time.Sleep(80 * time.Millisecond)
 	assert.Equal(t, true, fs.Enabled("myflag", nil))
 	assert.Equal(t, false, fs.Enabled("fakeflag", nil))
@@ -521,4 +522,21 @@ func TestFlagsetSeed(t *testing.T) {
 	}
 	assert.Equal(t, 10000, match12)
 	assert.InEpsilon(t, 5000, match13, 0.1)
+}
+
+func TestFlagsetMultipleHandlers(t *testing.T) {
+	t.Parallel()
+
+	mb := &mockBackend{}
+	mb.setFlag("a", mbFlag{err: errors.New("errA")})
+
+	me := &mockErrStorage{}
+	me2 := &mockErrStorage{}
+	fs := New(mb, OnError(me.set), OnError(me2.set))
+	defer fs.Close()
+
+	en := fs.Enabled("a", nil)
+	assert.False(t, en)
+	assert.Contains(t, me.get().Error(), "errA")
+	assert.Contains(t, me2.get().Error(), "errA")
 }

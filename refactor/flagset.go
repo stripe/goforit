@@ -15,16 +15,15 @@ type Flagset struct {
 	overrides   map[string]bool
 	defaultTags map[string]string
 
-	// These are immutable
-	random        *rand.Rand
-	maxStaleness  time.Duration
-	errorHandler  ErrorHandler
-	ageCallback   AgeCallback
-	checkCallback CheckCallback
+	// These are immutable after options are applied
+	random             *rand.Rand
+	maxStaleness       time.Duration
+	changedErrHandlers bool
+	errorHandlers      []ErrorHandler
+	ageCallbacks       []AgeCallback
+	checkCallbacks     []CheckCallback
 
 	// TODO: Special options for:
-	// - Use statsd for checks and ages (and errors?)
-	// - Use statsd for errors
 	// - Use sentry for errors?
 }
 
@@ -39,7 +38,10 @@ func New(backend Backend, opts ...Option) *Flagset {
 		defaultTags: map[string]string{},
 		random:      newRandom(time.Now().UnixNano()),
 	}
+
 	fs.setLogger(defaultLogger())
+	fs.changedErrHandlers = false
+
 	for _, opt := range opts {
 		opt(fs)
 	}
@@ -47,10 +49,23 @@ func New(backend Backend, opts ...Option) *Flagset {
 	return fs
 }
 
-func (fs *Flagset) setLogger(logger *log.Logger) {
-	fs.errorHandler = func(err error) {
-		logger.Print(err)
+func (fs *Flagset) addErrHandler(handler ErrorHandler) {
+	if !fs.changedErrHandlers {
+		fs.errorHandlers = nil
+		fs.changedErrHandlers = true
 	}
+
+	if handler == nil {
+		fs.errorHandlers = nil
+	} else {
+		fs.errorHandlers = append(fs.errorHandlers, handler)
+	}
+}
+
+func (fs *Flagset) setLogger(logger *log.Logger) {
+	fs.addErrHandler(func(err error) {
+		logger.Print(err)
+	})
 }
 
 func (fs *Flagset) setBackend(backend Backend) {
@@ -60,10 +75,8 @@ func (fs *Flagset) setBackend(backend Backend) {
 	fs.backend = backend
 
 	// Connect our handlers to the backend
-	backend.SetErrorHandler(fs.errorHandler)
-	backend.SetAgeCallback(func(at AgeType, age time.Duration) {
-		fs.checkAge(at, age)
-	})
+	backend.SetErrorHandler(fs.handleError)
+	backend.SetAgeCallback(fs.checkAge)
 }
 
 // Close releases any resources held
@@ -97,8 +110,8 @@ func (fs *Flagset) Enabled(name string, tags map[string]string) bool {
 	if !lastMod.IsZero() {
 		go fs.checkAge(AgeBackend, time.Now().Sub(lastMod))
 	}
-	if fs.checkCallback != nil {
-		go fs.checkCallback(name, enabled)
+	for _, cb := range fs.checkCallbacks {
+		go cb(name, enabled)
 	}
 	return enabled
 }
@@ -127,10 +140,10 @@ func (fs *Flagset) enabled(name string, tags map[string]string) (bool, time.Time
 
 	flag, lastMod, err := backend.Flag(name)
 	if err != nil {
-		go fs.errorHandler(err)
+		fs.handleError(err)
 	}
 	if flag == nil {
-		go fs.errorHandler(ErrUnknownFlag{name})
+		fs.handleError(ErrUnknownFlag{name})
 		return false, lastMod
 	}
 
@@ -139,16 +152,22 @@ func (fs *Flagset) enabled(name string, tags map[string]string) (bool, time.Time
 	}
 	enabled, err := flag.Enabled(fs.random, mergedTags)
 	if err != nil {
-		go fs.errorHandler(err)
+		fs.handleError(err)
 	}
 	return enabled, lastMod
 }
 
 func (fs *Flagset) checkAge(at AgeType, age time.Duration) {
 	if fs.maxStaleness > 0 && fs.maxStaleness < age {
-		go fs.errorHandler(ErrDataStale{age, fs.maxStaleness})
+		fs.handleError(ErrDataStale{age, fs.maxStaleness})
 	}
-	if fs.ageCallback != nil {
-		fs.ageCallback(at, age)
+	for _, cb := range fs.ageCallbacks {
+		go cb(at, age)
+	}
+}
+
+func (fs *Flagset) handleError(err error) {
+	for _, handler := range fs.errorHandlers {
+		go handler(err)
 	}
 }

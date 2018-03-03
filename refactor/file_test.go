@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	internal "github.com/stripe/goforit/refactor/internal"
 )
 
 func TestFileBackendInitial(t *testing.T) {
@@ -124,20 +125,6 @@ func TestFileBackendRefresh(t *testing.T) {
 	assert.True(t, enabled)
 }
 
-func atomicWriteFile(t *testing.T, f *os.File, s string) {
-	tmp, err := ioutil.TempFile(filepath.Dir(f.Name()), "goforit-")
-	require.NoError(t, err)
-	defer tmp.Close()
-	defer os.Remove(tmp.Name())
-
-	_, err = tmp.WriteString(s)
-	require.NoError(t, err)
-	err = tmp.Close()
-	require.NoError(t, err)
-	err = os.Rename(tmp.Name(), f.Name())
-	require.NoError(t, err)
-}
-
 func TestFileBackendFileRefresh(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +142,7 @@ func TestFileBackendFileRefresh(t *testing.T) {
 	assert.Nil(t, flag)
 	prevMod := lastMod
 
-	atomicWriteFile(t, file, "go.sun.money,0\n")
+	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
 	time.Sleep(80 * time.Millisecond)
 	flag, lastMod, err = backend.Flag("go.sun.money")
 	assert.NoError(t, err)
@@ -166,7 +153,7 @@ func TestFileBackendFileRefresh(t *testing.T) {
 	assert.False(t, enabled)
 	prevMod = lastMod
 
-	atomicWriteFile(t, file, "go.sun.money,1\n")
+	internal.AtomicWriteFile(t, file, "go.sun.money,1\n")
 	time.Sleep(80 * time.Millisecond)
 	flag, lastMod, err = backend.Flag("go.sun.money")
 	assert.NoError(t, err)
@@ -196,7 +183,7 @@ func TestFileBackendClose(t *testing.T) {
 	// After a close, we stop refreshing
 	backend.Close()
 	time.Sleep(80 * time.Millisecond)
-	atomicWriteFile(t, file, "go.sun.money,0\n")
+	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
 	time.Sleep(80 * time.Millisecond)
 	flag, lastMod, err = backend.Flag("go.sun.money")
 	assert.NoError(t, err)
@@ -211,7 +198,7 @@ func TestFileBackendMissing(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 	defer os.Remove(file.Name())
-	atomicWriteFile(t, file, "go.sun.money,0\n")
+	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
 
 	backend := NewFileBackend(file.Name(), CsvFileFormat{}, 10*time.Millisecond)
 	defer backend.Close()
@@ -262,7 +249,7 @@ func TestFileBackendParseError(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 	defer os.Remove(file.Name())
-	atomicWriteFile(t, file, "go.sun.money,0\n")
+	internal.AtomicWriteFile(t, file, "go.sun.money,0\n")
 
 	backend := NewFileBackend(file.Name(), CsvFileFormat{}, 10*time.Millisecond)
 	defer backend.Close()
@@ -289,7 +276,7 @@ func TestFileBackendParseError(t *testing.T) {
 	assert.NotNil(t, flag)
 
 	// Break the file, errors should occur
-	atomicWriteFile(t, file, "go.sun.money,foo\n")
+	internal.AtomicWriteFile(t, file, "go.sun.money,foo\n")
 	time.Sleep(80 * time.Millisecond)
 	func() {
 		mtx.Lock()
@@ -422,7 +409,7 @@ func TestShrink(t *testing.T) {
 
 	// Make a lot of flags disappear!
 	time.Sleep(40 * time.Millisecond)
-	atomicWriteFile(t, file, "test.1,0")
+	internal.AtomicWriteFile(t, file, "test.1,0")
 	time.Sleep(40 * time.Millisecond)
 
 	// We should see precisely one error

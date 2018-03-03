@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// CriticalError identifies errors that may indicate goforit is not working,
+// as opposed to transient errors.
+type CriticalError interface {
+	IsCritical() bool
+}
+
 // ErrUnknownFlag is used when someone asks about a flag we don't know about
 type ErrUnknownFlag struct {
 	Flag string
@@ -24,6 +30,10 @@ func (e ErrDataStale) Error() string {
 	return fmt.Sprintf("Flag data is stale: age=%v maxAge=%v", e.LastUpdatedAge, e.MaxStaleness)
 }
 
+func (e ErrDataStale) IsCritical() bool {
+	return true
+}
+
 // TODO: We don't actually use this yet
 type ErrBadTags struct {
 	flag string
@@ -36,12 +46,12 @@ type AgeType string
 const (
 	// AgeSource indicates the duration ago that a backend's source was updated.
 	// The source could be a file, network resource, etc.
-	AgeSource AgeType = "age.source"
+	AgeSource AgeType = "source"
 
 	// AgeBackend indicates the duration ago that a backend's data was updated,
 	// when Enabled is called.
 	// The underlying source of that data may still be stale.
-	AgeBackend AgeType = "age.backend"
+	AgeBackend AgeType = "backend"
 )
 
 // ErrorHandler is called when an error is encountered which should not stop the world
