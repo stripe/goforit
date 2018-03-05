@@ -23,10 +23,19 @@ func MaxStaleness(duration time.Duration) Option {
 }
 
 // OnError specifies a callback for errors
-// Pass nil to remove all error handlers
 func OnError(h ErrorHandler) Option {
 	return func(fs *Flagset) {
 		fs.addErrHandler(h)
+	}
+}
+
+// SuppressErrors causes existing error handlers to be removed, and prevents a default error
+// handler from being added.
+// You can still add more error handlers afterwards
+func SuppressErrors() Option {
+	return func(fs *Flagset) {
+		fs.errorHandlers = nil
+		fs.noDefaultErrorHandler = true
 	}
 }
 
@@ -74,9 +83,4 @@ func LogErrors(logger *log.Logger) Option {
 	return func(fs *Flagset) {
 		fs.setLogger(logger)
 	}
-}
-
-// SuppressErrors causes errors to be hidden
-func SuppressErrors() Option {
-	return OnError(nil)
 }

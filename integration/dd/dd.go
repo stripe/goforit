@@ -13,19 +13,14 @@ import (
 const goforitService = "goforit.backend.update"
 
 // An interface reflecting the parts of statsd that we need, so we can mock it
-type statsdClient interface {
+type StatsdClient interface {
 	Histogram(string, float64, []string, float64) error
 	Incr(string, []string, float64) error
 	SimpleServiceCheck(string, statsd.ServiceCheckStatus) error
 }
 
-func addStatsd(stats statsdClient, err error) goforit.Option {
+func Statsd(stats StatsdClient) goforit.Option {
 	return func(fs *goforit.Flagset) {
-		if err != nil {
-			log.Printf("goforit can't initialize statsd client: %s", err)
-			return
-		}
-
 		goforit.OnAge(func(ag goforit.AgeType, age time.Duration) {
 			// Send a histogram of ages, so we can detect out-of-date flags
 			metric := "goforit.age." + string(ag)
@@ -65,7 +60,11 @@ func addStatsd(stats statsdClient, err error) goforit.Option {
 }
 
 // Statsd reports information about this Flagset to DataDog
-func Statsd(addr string) goforit.Option {
+func StatsdAddr(addr string) goforit.Option {
 	stats, err := statsd.New(addr)
-	return addStatsd(stats, err)
+	if err != nil {
+		log.Printf("goforit can't initialize statsd client: %s", err)
+		return func(*goforit.Flagset) {}
+	}
+	return Statsd(stats)
 }

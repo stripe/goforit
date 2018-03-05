@@ -17,12 +17,12 @@ type Flagset struct {
 	defaultTags map[string]string
 
 	// These are immutable after options are applied
-	random             *rand.Rand
-	maxStaleness       time.Duration
-	changedErrHandlers bool // have we ever set a non-default handler?
-	errorHandlers      []ErrorHandler
-	ageCallbacks       []AgeCallback
-	checkCallbacks     []CheckCallback
+	random                *rand.Rand
+	maxStaleness          time.Duration
+	noDefaultErrorHandler bool
+	errorHandlers         []ErrorHandler
+	ageCallbacks          []AgeCallback
+	checkCallbacks        []CheckCallback
 }
 
 // Create a default logger
@@ -38,13 +38,14 @@ func New(backend Backend, opts ...Option) *Flagset {
 		random:      newRandom(time.Now().UnixNano()),
 	}
 
-	// Set the default error handler
-	fs.setLogger(defaultLogger())
-	fs.changedErrHandlers = false
-
 	// Apply options
 	for _, opt := range opts {
 		opt(fs)
+	}
+
+	// If there's no error handler added, add a default one that just logs errors.
+	if !fs.noDefaultErrorHandler && len(fs.errorHandlers) == 0 {
+		fs.setLogger(defaultLogger())
 	}
 
 	// Initialize the backend
@@ -54,20 +55,7 @@ func New(backend Backend, opts ...Option) *Flagset {
 
 // Add an error handler to our list
 func (fs *Flagset) addErrHandler(handler ErrorHandler) {
-	// If the user specifies their first error handler, it overrides the default.
-	// Subsequent handlers will be appended.
-	if !fs.changedErrHandlers {
-		// This is the first custom one, clear our the list before adding it.
-		fs.errorHandlers = nil
-		fs.changedErrHandlers = true
-	}
-
-	if handler == nil {
-		// nil means get rid of all error handlers
-		fs.errorHandlers = nil
-	} else {
-		fs.errorHandlers = append(fs.errorHandlers, handler)
-	}
+	fs.errorHandlers = append(fs.errorHandlers, handler)
 }
 
 // Set a logger as an error handler

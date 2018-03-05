@@ -97,7 +97,7 @@ func TestDDIntegration(t *testing.T) {
 	internal.AtomicWriteFile(t, file, "a,1\nb,0\n")
 
 	backend := goforit.NewCsvBackend(file.Name(), 40*time.Millisecond)
-	fs := goforit.New(backend, addStatsd(stats, nil))
+	fs := goforit.New(backend, Statsd(stats))
 	defer fs.Close()
 
 	fs.Enabled("a")
@@ -153,7 +153,7 @@ func TestDDIntegrationErrors(t *testing.T) {
 
 	internal.AtomicWriteFile(t, file, "a,1\nb,0\n")
 	backend := goforit.NewCsvBackend(file.Name(), 40*time.Millisecond)
-	fs := goforit.New(backend, addStatsd(stats, nil))
+	fs := goforit.New(backend, Statsd(stats))
 	defer fs.Close()
 
 	// A non-critical error: flag is missing
