@@ -12,6 +12,10 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"sort"
+	"crypto/sha1"
+	"encoding/hex"
+	"bytes"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -77,8 +81,29 @@ func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
 }
 
 type Flag struct {
-	Name string
-	Rate float64
+	Name   string
+	Active bool
+	Rules  []json.RawMessage
+}
+
+type Rule interface {
+	Handle(ctx context.Context, props map[string]string) bool
+	onMatch() string
+	onMiss() string
+}
+
+type MatchListRule struct {
+	Property string
+	Values   []string
+	OnMatch  string `json:"on_match"`
+	OnMiss   string `json:"on_miss"`
+}
+
+type RateRule struct {
+	Rate    float64
+	Properties []string
+	OnMatch string `json:"on_match"`
+	OnMiss  string `json:"on_miss"`
 }
 
 type JSONFormat struct {
@@ -96,7 +121,7 @@ var lastAssert time.Time
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(ctx context.Context, name string) (enabled bool) {
+func Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	defer func() {
 		var gauge float64
 		if enabled {
@@ -132,21 +157,120 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 		return
 	}
 	flag := flags[name]
-
-	// equality should be strict
-	// because Float64() can return 0
-	if f := rand.Float64(); f < flag.Rate {
-		enabled = true
+	if !flag.Active {
+		enabled = false
 		return
 	}
-	enabled = false
+	for _, r := range flag.Rules {
+		var obj map[string]interface{}
+		err := json.Unmarshal(r, &obj)
+		if err != nil {
+			return false
+		}
+
+		ruleType := ""
+		if t, ok := obj["type"].(string); ok {
+			ruleType = t
+		}
+
+		// unmarshal again into the correct type
+		var actual Rule
+		switch ruleType {
+		case "sample":
+			actual = &RateRule{}
+		case "match_list":
+			actual = &MatchListRule{}
+		}
+		json.Unmarshal(r, actual)
+		res := actual.Handle(ctx, properties)
+		var matchBehavior string
+		if res {
+			matchBehavior = actual.onMatch()
+		} else {
+			matchBehavior= actual.onMiss()
+		}
+		switch matchBehavior {
+			case "on":
+				enabled = true
+				return
+			case "off":
+				enabled = false
+				return
+			case "match_list":
+				continue
+		}
+	}
+	enabled = true
 	return
+}
+
+func getProperty(ctx context.Context, props map[string]string, prop string) string {
+	if v, ok := props[prop]; ok {
+		return v
+	} else if v, ok := ctx.Value(overrideContextKey).(string); ok {
+		return v
+	} else {
+		return ""
+	}
+}
+
+func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
+	if r.Properties != nil {
+		// get the sha1 of the properties values concat
+		h := sha1.New()
+		sort.Strings(r.Properties)
+		var buffer bytes.Buffer
+		for _, val := range r.Properties {
+			 buffer.WriteString(getProperty(ctx, props, val))
+		}
+		h.Write([]byte(buffer.String()))
+    bs := h.Sum(nil)
+		encodedStr := hex.EncodeToString(bs)
+		// get the most significant 16 digits
+		x, _ := strconv.ParseUint(encodedStr[0:4], 16, 16)
+		// check to see if the 16 most significant bits of the hex
+		// is less than (rate * 2^16)
+		return float64(x) < (r.Rate * float64(1<<16))
+	} else {
+		f := rand.Float64();
+		return f < r.Rate
+	}
+}
+
+func (r MatchListRule) Handle(ctx context.Context, props map[string]string) bool {
+	prop := getProperty(ctx, props, r.Property)
+	for _, val := range r.Values {
+		if val == prop {
+			return true
+		}
+	}
+	return false
+}
+
+// getter for the match behavior
+func (b RateRule) onMatch() string {
+	return b.OnMatch
+}
+
+// getter for the miss behavior
+func (b RateRule) onMiss() string {
+	return b.OnMiss
+}
+
+// getter for the match behavior
+func (b MatchListRule) onMatch() string {
+	return b.OnMatch
+}
+
+// getter for the miss behavior
+func (b MatchListRule) onMiss() string {
+	return b.OnMiss
 }
 
 func flagsToMap(flags []Flag) map[string]Flag {
 	flagsMap := map[string]Flag{}
 	for _, flag := range flags {
-		flagsMap[flag.Name] = Flag{Name: flag.Name, Rate: flag.Rate}
+		flagsMap[flag.Name] = flag
 	}
 	return flagsMap
 }
@@ -170,12 +294,13 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 		name := row[0]
 
 		rate, err := strconv.ParseFloat(row[1], 64)
+		fmt.Println(rate)
 		if err != nil {
 			// TODO also track somehow
 			rate = 0
 		}
 
-		flags[name] = Flag{Name: name, Rate: rate}
+		flags[name] = Flag{Name: name, Active: true}
 	}
 	return flags, time.Time{}, nil
 }
