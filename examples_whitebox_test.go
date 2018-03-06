@@ -16,15 +16,18 @@ func Example() {
 	backend := goforit.BackendFromFile("flags.csv")
 	goforit.Init(30*time.Second, backend)
 
-	if goforit.Enabled(ctx, "go.sun.mercury") {
+	enabled, err := goforit.Enabled(ctx, "go.sun.moon", map[string]string{"host_name": "apibox_123"})
+	if err == nil && enabled {
 		fmt.Println("The go.sun.mercury feature is enabled for 100% of requests")
 	}
 	// Same thing.
-	if goforit.Enabled(nil, "go.sun.mercury") {
+	enabled, err = goforit.Enabled(nil, "go.sun.mercury",nil)
+	if err == nil && enabled {
 		fmt.Println("The go.sun.mercury feature is enabled for 100% of requests")
 	}
 
-	if goforit.Enabled(ctx, "go.stars.money") {
+	enabled, err = goforit.Enabled(ctx, "go.stars.money",nil)
+	if err == nil && enabled {
 		fmt.Println("The go.stars.money feature is enabled for 50% of requests")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"bytes"
+	"errors"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -83,7 +84,7 @@ func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
 type Flag struct {
 	Name   string
 	Active bool
-	Rules  []json.RawMessage
+	Rules  []Rule
 }
 
 type Rule interface {
@@ -106,8 +107,14 @@ type RateRule struct {
 	OnMiss  string `json:"on_miss"`
 }
 
+type FlagJSONFormat struct {
+	Name   string
+	Active bool
+	Rules  []json.RawMessage
+}
+
 type JSONFormat struct {
-	Flags       []Flag  `json:"flags"`
+	Flags       []FlagJSONFormat  `json:"flags"`
 	UpdatedTime float64 `json:"updated"`
 }
 
@@ -121,7 +128,8 @@ var lastAssert time.Time
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
+func Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool, err error) {
+	err = nil
 	defer func() {
 		var gauge float64
 		if enabled {
@@ -141,6 +149,7 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 			log.Printf("[goforit] The Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, stalenessThreshold)
 		}
 	}()
+
 	// Check for an override.
 	if ctx != nil {
 		if ov, ok := ctx.Value(overrideContextKey).(overrides); ok {
@@ -152,42 +161,23 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 
 	flagsMtx.RLock()
 	defer flagsMtx.RUnlock()
+	enabled = false
 	if flags == nil {
-		enabled = false
+		err = errors.New("empty flags map")
 		return
 	}
 	flag := flags[name]
 	if !flag.Active {
-		enabled = false
 		return
 	}
 	for _, r := range flag.Rules {
-		var obj map[string]interface{}
-		err := json.Unmarshal(r, &obj)
-		if err != nil {
-			return false
-		}
 
-		ruleType := ""
-		if t, ok := obj["type"].(string); ok {
-			ruleType = t
-		}
-
-		// unmarshal again into the correct type
-		var actual Rule
-		switch ruleType {
-		case "sample":
-			actual = &RateRule{}
-		case "match_list":
-			actual = &MatchListRule{}
-		}
-		json.Unmarshal(r, actual)
-		res := actual.Handle(ctx, properties)
+		res := r.Handle(ctx, properties)
 		var matchBehavior string
 		if res {
-			matchBehavior = actual.onMatch()
+			matchBehavior = r.onMatch()
 		} else {
-			matchBehavior= actual.onMiss()
+			matchBehavior= r.onMiss()
 		}
 		switch matchBehavior {
 			case "on":
@@ -198,6 +188,9 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 				return
 			case "match_list":
 				continue
+			default:
+				err = errors.New("unknown match behavior: " + matchBehavior)
+				return
 		}
 	}
 	enabled = true
@@ -218,6 +211,7 @@ func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
+		// sort the properties for consistent behavior (should we sort on Refresh()?)
 		sort.Strings(r.Properties)
 		var buffer bytes.Buffer
 		for _, val := range r.Properties {
@@ -294,13 +288,19 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 		name := row[0]
 
 		rate, err := strconv.ParseFloat(row[1], 64)
-		fmt.Println(rate)
 		if err != nil {
 			// TODO also track somehow
 			rate = 0
 		}
-
-		flags[name] = Flag{Name: name, Active: true}
+		var active = false
+		var rules = []Rule{}
+		if rate > 0 {
+			active = true
+			if rate < 1 {
+				rules = append(rules, RateRule{Rate: rate, OnMatch: "on", OnMiss: "off"})
+			}
+		}
+		flags[name] = Flag{Name: name, Active: active, Rules: rules}
 	}
 	return flags, time.Time{}, nil
 }
@@ -313,7 +313,48 @@ func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
 		log.Print("[goforit] error parsing JSON file:\n", err)
 		return nil, time.Time{}, err
 	}
-	return flagsToMap(v.Flags), time.Unix(int64(v.UpdatedTime), 0), nil
+	// we first unmarshall into the intermediate FlagJSONFormat
+	// then do another pass to parse the different rule types per flag
+	flags := make([]Flag, len(v.Flags))
+ 	for i, flag := range v.Flags {
+		rules := make([]Rule, len(flag.Rules))
+		for i2, r := range flag.Rules {
+
+			// first extract the rule type
+			var obj map[string]interface{}
+			err = json.Unmarshal(r, &obj)
+			if err != nil {
+				return nil, time.Time{}, err
+			}
+
+			ruleType := ""
+			if t, ok := obj["type"].(string); ok {
+				ruleType = t
+			} else {
+				return nil, time.Time{}, errors.New("Malformed json. Missing rule type.")
+			}
+
+			// unmarshal again into the correct rule struct now that we know the type
+			var actual Rule
+			switch ruleType {
+			case "sample":
+				actual = &RateRule{}
+			case "match_list":
+				actual = &MatchListRule{}
+			default:
+				return nil, time.Time{}, errors.New("Malformed json. Unknown rule type: " + ruleType)
+			}
+
+			err = json.Unmarshal(r, actual)
+			if(err != nil) {
+				return nil, time.Time{}, err
+			}
+
+			rules[i2] = actual
+			flags[i] = Flag{Name: flag.Name, Active: flag.Active, Rules: rules}
+		}
+	}
+	return flagsToMap(flags), time.Unix(int64(v.UpdatedTime), 0), nil
 }
 
 // BackendFromFile is a helper function that creates a valid

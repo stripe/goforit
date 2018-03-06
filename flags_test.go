@@ -43,15 +43,24 @@ func TestParseFlagsCSV(t *testing.T) {
 			Expected: []Flag{
 				{
 					"go.sun.money",
-					0,
+					false,
+					[]Rule{},
 				},
 				{
 					"go.moon.mercury",
-					1,
+					true,
+					[]Rule{},
 				},
 				{
 					"go.stars.money",
-					0.5,
+					true,
+					[]Rule{
+						RateRule{
+							Rate: 0.5,
+							OnMatch: "on",
+							OnMiss: "off",
+						},
+					},
 				},
 			},
 		},
@@ -85,8 +94,28 @@ func TestParseFlagsJSON(t *testing.T) {
 			Filename: filepath.Join("fixtures", "flags_example.json"),
 			Expected: []Flag{
 				{
-					"sequins.prevent_download",
-					0,
+					"go.sun.moon",
+					true,
+					[]Rule{
+						MatchListRule{
+							"host_name",
+							[]string{"apibox_123", "apibox_456"},
+							"off",
+							"continue",
+						},
+						MatchListRule{
+							"host_name",
+							[]string{"apibox_789"},
+							"on",
+							"continue",
+						},
+						RateRule{
+							0.01,
+							[]string{"cluster", "db"},
+							"on",
+							"off",
+						},
+					},
 				},
 			},
 		},
@@ -105,6 +134,14 @@ func TestParseFlagsJSON(t *testing.T) {
 	}
 }
 
+// should check there is no error
+//func checkEnabled(t *testing.T, ctx context.Context, flag string) bool {
+func checkEnabled(ctx context.Context, flag string) bool {
+	ret, _ := Enabled(ctx, flag, nil)
+	// assert.Nil(t, err)
+	return ret
+}
+
 func TestEnabled(t *testing.T) {
 	const iterations = 100000
 
@@ -113,16 +150,16 @@ func TestEnabled(t *testing.T) {
 	ticker := Init(DefaultInterval, backend)
 	defer ticker.Stop()
 
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
+	assert.True(t, checkEnabled(context.Background(), "go.moon.mercury"))
 
 	// nil is equivalent to empty context
-	assert.False(t, Enabled(nil, "go.sun.money"))
-	assert.True(t, Enabled(nil, "go.moon.mercury"))
+	assert.False(t, checkEnabled(nil, "go.sun.money"))
+	assert.True(t, checkEnabled(nil, "go.moon.mercury"))
 
 	count := 0
 	for i := 0; i < iterations; i++ {
-		if Enabled(context.Background(), "go.stars.money") {
+		if checkEnabled(context.Background(), "go.stars.money") {
 			count++
 		}
 	}
@@ -160,8 +197,8 @@ func TestRefresh(t *testing.T) {
 	Reset()
 	backend := &dummyBackend{}
 
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.False(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
+	assert.False(t, checkEnabled(context.Background(), "go.moon.mercury"))
 
 	ticker := Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
@@ -173,8 +210,8 @@ func TestRefresh(t *testing.T) {
 		<-time.After(10 * time.Millisecond)
 	}
 
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
+	assert.True(t, checkEnabled(context.Background(), "go.moon.mercury"))
 }
 
 func TestMultipleDefinitions(t *testing.T) {
@@ -186,7 +223,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	RefreshFlags(backend)
 
 	flag := flags[repeatedFlag]
-	assert.Equal(t, flag, Flag{repeatedFlag, lastValue})
+	assert.Equal(t, flag, Flag{repeatedFlag, true, []Rule{RateRule{Rate: lastValue, OnMatch: "on", OnMiss: "off",}}})
 
 }
 
@@ -200,7 +237,7 @@ func BenchmarkEnabled(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = Enabled(context.Background(), "go.stars.money")
+		_ = checkEnabled(context.Background(), "go.stars.money")
 	}
 }
 
@@ -223,77 +260,77 @@ func TestOverride(t *testing.T) {
 	RefreshFlags(backend)
 
 	// Empty context gets values from backend.
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
-	assert.False(t, Enabled(context.Background(), "go.extra"))
+	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
+	assert.True(t, checkEnabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, checkEnabled(context.Background(), "go.extra"))
 
 	// Nil is equivalent to empty context.
-	assert.False(t, Enabled(nil, "go.sun.money"))
-	assert.True(t, Enabled(nil, "go.moon.mercury"))
-	assert.False(t, Enabled(nil, "go.extra"))
+	assert.False(t, checkEnabled(nil, "go.sun.money"))
+	assert.True(t, checkEnabled(nil, "go.moon.mercury"))
+	assert.False(t, checkEnabled(nil, "go.extra"))
 
 	// Can override to true in context.
 	ctx := context.Background()
 	ctx = Override(ctx, "go.sun.money", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.True(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.True(t, checkEnabled(ctx, "go.moon.mercury"))
+	assert.False(t, checkEnabled(ctx, "go.extra"))
 
 	// Can override to false.
 	ctx = Override(ctx, "go.moon.mercury", false)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
+	assert.False(t, checkEnabled(ctx, "go.extra"))
 
 	// Can override brand new flag.
 	ctx = Override(ctx, "go.extra", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.True(t, Enabled(ctx, "go.extra"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
+	assert.True(t, checkEnabled(ctx, "go.extra"))
 
 	// Can override an override.
 	ctx = Override(ctx, "go.extra", false)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
+	assert.False(t, checkEnabled(ctx, "go.extra"))
 
 	// Separate contexts don't interfere with each other.
 	// This allows parallel tests that use feature flags.
 	ctx2 := Override(context.Background(), "go.extra", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
-	assert.False(t, Enabled(ctx2, "go.sun.money"))
-	assert.True(t, Enabled(ctx2, "go.moon.mercury"))
-	assert.True(t, Enabled(ctx2, "go.extra"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
+	assert.False(t, checkEnabled(ctx, "go.extra"))
+	assert.False(t, checkEnabled(ctx2, "go.sun.money"))
+	assert.True(t, checkEnabled(ctx2, "go.moon.mercury"))
+	assert.True(t, checkEnabled(ctx2, "go.extra"))
 
 	// Overrides apply to child contexts.
 	child := context.WithValue(ctx, "foo", "bar")
-	assert.True(t, Enabled(child, "go.sun.money"))
-	assert.False(t, Enabled(child, "go.moon.mercury"))
-	assert.False(t, Enabled(child, "go.extra"))
+	assert.True(t, checkEnabled(child, "go.sun.money"))
+	assert.False(t, checkEnabled(child, "go.moon.mercury"))
+	assert.False(t, checkEnabled(child, "go.extra"))
 
 	// Changes to child contexts don't affect parents.
 	child = Override(child, "go.moon.mercury", true)
-	assert.True(t, Enabled(child, "go.sun.money"))
-	assert.True(t, Enabled(child, "go.moon.mercury"))
-	assert.False(t, Enabled(child, "go.extra"))
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, checkEnabled(child, "go.sun.money"))
+	assert.True(t, checkEnabled(child, "go.moon.mercury"))
+	assert.False(t, checkEnabled(child, "go.extra"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
+	assert.False(t, checkEnabled(ctx, "go.extra"))
 }
 
 func TestOverrideWithoutInit(t *testing.T) {
 	Reset()
 
 	// Everything is false by default.
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.False(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
+	assert.False(t, checkEnabled(context.Background(), "go.moon.mercury"))
 
 	// Can override.
 	ctx := Override(context.Background(), "go.sun.money", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.True(t, checkEnabled(ctx, "go.sun.money"))
+	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
 }
 
 type mockHistogramClient struct {
@@ -313,7 +350,7 @@ func (m *mockHistogramClient) Histogram(name string, value float64, tags []strin
 }
 
 func writeMockJSONFile(t *testing.T, path string, updatedPeriod time.Duration) {
-	flags := []Flag{{"go.sun.money", 1.0}}
+	flags := []FlagJSONFormat{{"go.sun.money", true, []json.RawMessage{}}}
 	updatedTime := time.Now().Add(updatedPeriod)
 	flagsJson := &JSONFormat{flags, float64(updatedTime.Unix())}
 
@@ -402,7 +439,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	defer ticker.Stop()
 
 	for i := 0; i < 10; i++ {
-		Enabled(ctx, "go.sun.money")
+		checkEnabled(ctx, "go.sun.money")
 		time.Sleep(3 * time.Millisecond)
 	}
 
@@ -410,7 +447,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	ticker.Stop()
 
 	for i := 0; i < 10; i++ {
-		Enabled(ctx, "go.sun.money")
+		checkEnabled(ctx, "go.sun.money")
 		time.Sleep(3 * time.Millisecond)
 	}
 
