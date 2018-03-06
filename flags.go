@@ -38,17 +38,6 @@ type goforit struct {
 	lastAssert time.Time
 }
 
-var globalGoforit goforit
-
-func initGlobal() {
-	globalGoforit.stats, _ = statsd.New(statsdAddress)
-	globalGoforit.flags = map[string]Flag{}
-}
-
-func init() {
-	initGlobal()
-}
-
 const DefaultInterval = 30 * time.Second
 
 type Flag struct {
@@ -60,24 +49,24 @@ type Flag struct {
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(ctx context.Context, name string) (enabled bool) {
+func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 	defer func() {
 		var gauge float64
 		if enabled {
 			gauge = 1
 		}
-		globalGoforit.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
+		g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
 	}()
 
 	defer func() {
-		globalGoforit.flagsMtx.RLock()
-		defer globalGoforit.flagsMtx.RUnlock()
-		staleness := time.Since(globalGoforit.lastFlagRefreshTime)
+		g.flagsMtx.RLock()
+		defer g.flagsMtx.RUnlock()
+		staleness := time.Since(g.lastFlagRefreshTime)
 		//histogram of cache process age
-		globalGoforit.stats.Histogram("goforit.flags.last_refresh_s", staleness.Seconds(), nil, .01)
-		if staleness > globalGoforit.stalenessThreshold && time.Since(globalGoforit.lastAssert) > lastAssertInterval {
-			globalGoforit.lastAssert = time.Now()
-			log.Printf("[goforit] The Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, globalGoforit.stalenessThreshold)
+		g.stats.Histogram("goforit.flags.last_refresh_s", staleness.Seconds(), nil, .01)
+		if staleness > g.stalenessThreshold && time.Since(g.lastAssert) > lastAssertInterval {
+			g.lastAssert = time.Now()
+			log.Printf("[goforit] The Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, g.stalenessThreshold)
 		}
 	}()
 	// Check for an override.
@@ -89,13 +78,13 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 		}
 	}
 
-	globalGoforit.flagsMtx.RLock()
-	defer globalGoforit.flagsMtx.RUnlock()
-	if globalGoforit.flags == nil {
+	g.flagsMtx.RLock()
+	defer g.flagsMtx.RUnlock()
+	if g.flags == nil {
 		enabled = false
 		return
 	}
-	flag := globalGoforit.flags[name]
+	flag := g.flags[name]
 
 	// equality should be strict
 	// because Float64() can return 0
@@ -112,9 +101,8 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 // The thunk provided can use a variety of mechanisms for
 // querying the flag values, such as a local file or
 // Consul key/value storage.
-func RefreshFlags(backend Backend) error {
-
-	refreshedFlags, age, err := backend.Refresh()
+func (g *goforit) RefreshFlags(backend Backend) error {
+	refreshedFlags, age, err := backend.Refresh(g)
 	if err != nil {
 		return err
 	}
@@ -124,48 +112,48 @@ func RefreshFlags(backend Backend) error {
 		fmap[flag.Name] = flag
 	}
 	if !age.IsZero() {
-		globalGoforit.stalenessMtx.RLock()
-		defer globalGoforit.stalenessMtx.RUnlock()
+		g.stalenessMtx.RLock()
+		defer g.stalenessMtx.RUnlock()
 		staleness := time.Since(age)
-		stale := staleness > globalGoforit.stalenessThreshold
+		stale := staleness > g.stalenessThreshold
 		//histogram of staleness
-		globalGoforit.stats.Histogram("goforit.flags.cache_file_age_s", staleness.Seconds(), nil, .1)
+		g.stats.Histogram("goforit.flags.cache_file_age_s", staleness.Seconds(), nil, .1)
 		if stale {
-			log.Printf("[goforit] The backend is stale (%s) past our threshold (%s)", staleness, globalGoforit.stalenessThreshold)
+			log.Printf("[goforit] The backend is stale (%s) past our threshold (%s)", staleness, g.stalenessThreshold)
 		}
 	}
 	// update the package-level flags
 	// which are protected by the mutex
-	globalGoforit.flagsMtx.Lock()
-	globalGoforit.flags = fmap
-	globalGoforit.lastFlagRefreshTime = time.Now()
-	globalGoforit.flagsMtx.Unlock()
+	g.flagsMtx.Lock()
+	g.flags = fmap
+	g.lastFlagRefreshTime = time.Now()
+	g.flagsMtx.Unlock()
 
 	return nil
 }
 
-func SetStalenessThreshold(threshold time.Duration) {
-	globalGoforit.stalenessMtx.Lock()
-	defer globalGoforit.stalenessMtx.Unlock()
-	globalGoforit.stalenessThreshold = threshold
+func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
+	g.stalenessMtx.Lock()
+	defer g.stalenessMtx.Unlock()
+	g.stalenessThreshold = threshold
 }
 
 // Init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
 // When the Ticker returned by Init is closed, updates will stop.
-func Init(interval time.Duration, backend Backend) *time.Ticker {
+func (g *goforit) Init(interval time.Duration, backend Backend) *time.Ticker {
 
 	ticker := time.NewTicker(interval)
 	err := RefreshFlags(backend)
 	if err != nil {
-		globalGoforit.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 	}
 
 	go func() {
 		for _ = range ticker.C {
 			err := RefreshFlags(backend)
 			if err != nil {
-				globalGoforit.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+				g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 			}
 		}
 	}()

@@ -15,7 +15,7 @@ import (
 type Backend interface {
 	// Refresh returns a new set of flags.
 	// It also returns the age of these flags, or an empty time if no age is known.
-	Refresh() (map[string]Flag, time.Time, error)
+	Refresh(*goforit) (map[string]Flag, time.Time, error)
 }
 
 type csvFileBackend struct {
@@ -31,10 +31,10 @@ type JSONFormat struct {
 	UpdatedTime float64 `json:"updated"`
 }
 
-func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
+func readFile(g *goforit, file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		globalGoforit.stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
+		g.stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
 	}()
 	f, err := os.Open(file)
 	if err != nil {
@@ -46,12 +46,12 @@ func readFile(file string, backend string, parse func(io.Reader) (map[string]Fla
 	return parse(f)
 }
 
-func (b jsonFileBackend) Refresh() (map[string]Flag, time.Time, error) {
-	return readFile(b.filename, "json", parseFlagsJSON)
+func (b jsonFileBackend) Refresh(g *goforit) (map[string]Flag, time.Time, error) {
+	return readFile(g, b.filename, "json", parseFlagsJSON)
 }
 
-func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
-	return readFile(b.filename, "csv", parseFlagsCSV)
+func (b csvFileBackend) Refresh(g *goforit) (map[string]Flag, time.Time, error) {
+	return readFile(g, b.filename, "csv", parseFlagsCSV)
 }
 
 func flagsToMap(flags []Flag) map[string]Flag {
