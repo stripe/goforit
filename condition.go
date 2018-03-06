@@ -24,16 +24,16 @@ type ConditionAction string
 const (
 	// ConditionNextRule indicates that the next condition in sequence should be executed
 	ConditionNext ConditionAction = "next"
-	// ConditionEnabled indicates that the flag should be enabled
-	ConditionEnabled ConditionAction = "enabled"
-	// ConditionDisabled indicates that the flag should be disabled
-	ConditionDisabled ConditionAction = "disabled"
+	// ConditionFlagEnabled indicates that the flag should be enabled
+	ConditionFlagEnabled ConditionAction = "enabled"
+	// ConditionFlagDisabled indicates that the flag should be disabled
+	ConditionFlagDisabled ConditionAction = "disabled"
 )
 
 var conditionActions = map[ConditionAction]bool{
-	ConditionNext:     true,
-	ConditionEnabled:  true,
-	ConditionDisabled: true,
+	ConditionNext:         true,
+	ConditionFlagEnabled:  true,
+	ConditionFlagDisabled: true,
 }
 
 // ConditionInfo is a condition, plus information about what to do when it is true
@@ -60,8 +60,42 @@ func (f *ConditionFlag) Name() string {
 	return f.FlagName
 }
 
+// Init gets this flag ready for use
+func (f *ConditionFlag) Init() {
+	for _, cond := range f.Conditions {
+		cond.Condition.Init()
+	}
+}
+
 func (f *ConditionFlag) Enabled(rnd *rand.Rand, tags map[string]string) (bool, error) {
-	panic("implement me") // TODO
+	if !f.Active {
+		return false, nil
+	}
+
+	// Try each condition in sequence
+	for _, cond := range f.Conditions {
+		action := ConditionNext
+		match, err := cond.Condition.Match(rnd, f.Name(), tags)
+		if err != nil {
+			return false, err
+		}
+
+		// Take an action
+		if match {
+			action = cond.OnMatch
+		} else {
+			action = cond.OnMiss
+		}
+		if action == ConditionFlagEnabled {
+			return true, nil
+		} else if action == ConditionFlagDisabled {
+			return false, nil
+		}
+		// Otherwise, keep going
+	}
+
+	// If we get to the end, that's equivalent to false
+	return false, nil
 }
 
 // ConditionInList is a condition that matches a tag against a list of values

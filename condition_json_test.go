@@ -11,6 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func initConditionFlags(fs []Flag) {
+	for _, f := range fs {
+		f.(*ConditionFlag).Init()
+	}
+}
+
 func TestParseConditionJsonSimple(t *testing.T) {
 	t.Parallel()
 
@@ -29,7 +35,7 @@ func TestParseConditionJsonSimple(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
+					OnMatch: ConditionFlagEnabled,
 					OnMiss:  ConditionNext,
 					Condition: &ConditionInList{
 						Tag:    "user",
@@ -37,8 +43,8 @@ func TestParseConditionJsonSimple(t *testing.T) {
 					},
 				},
 				{
-					OnMatch: ConditionDisabled,
-					OnMiss:  ConditionEnabled,
+					OnMatch: ConditionFlagDisabled,
+					OnMiss:  ConditionFlagEnabled,
 					Condition: &ConditionInList{
 						Tag:    "user",
 						Values: []string{"bob"},
@@ -47,6 +53,7 @@ func TestParseConditionJsonSimple(t *testing.T) {
 			},
 		},
 	}
+	initConditionFlags(expected)
 	assert.Equal(t, expected, flags)
 }
 
@@ -68,7 +75,7 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
+					OnMatch: ConditionFlagEnabled,
 					OnMiss:  ConditionNext,
 					Condition: &ConditionSample{
 						Tags: []string{},
@@ -82,8 +89,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{},
 						Rate: 1,
@@ -96,8 +103,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{},
 						Rate: 0.1,
@@ -110,8 +117,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionInList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
@@ -125,15 +132,15 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Conditions: []ConditionInfo{
 				{
 					OnMatch: ConditionNext,
-					OnMiss:  ConditionDisabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionInList{
 						Tag:    "user",
 						Values: []string{"alice"},
 					},
 				},
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionInList{
 						Tag:    "currency",
 						Values: []string{"usd", "cad"},
@@ -146,8 +153,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionDisabled,
-					OnMiss:  ConditionEnabled,
+					OnMatch: ConditionFlagDisabled,
+					OnMiss:  ConditionFlagEnabled,
 					Condition: &ConditionInList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
@@ -160,8 +167,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{"server"},
 						Rate: 0.1,
@@ -174,8 +181,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{"server", "dataset"},
 						Rate: 0.1,
@@ -188,7 +195,7 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
+					OnMatch: ConditionFlagEnabled,
 					OnMiss:  ConditionNext,
 					Condition: &ConditionInList{
 						Tag:    "user",
@@ -196,8 +203,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 					},
 				},
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{"request_id"},
 						Rate: 0.1,
@@ -211,15 +218,15 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Conditions: []ConditionInfo{
 				{
 					OnMatch: ConditionNext,
-					OnMiss:  ConditionDisabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionInList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
 					},
 				},
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{"request_id"},
 						Rate: 0.1,
@@ -232,7 +239,7 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   true,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
+					OnMatch: ConditionFlagEnabled,
 					OnMiss:  ConditionNext,
 					Condition: &ConditionInList{
 						Tag:    "user",
@@ -240,7 +247,7 @@ func TestParseConditionJsonFull(t *testing.T) {
 					},
 				},
 				{
-					OnMatch: ConditionDisabled,
+					OnMatch: ConditionFlagDisabled,
 					OnMiss:  ConditionNext,
 					Condition: &ConditionInList{
 						Tag:    "user",
@@ -248,8 +255,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 					},
 				},
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{"request_id"},
 						Rate: 0.2,
@@ -262,8 +269,8 @@ func TestParseConditionJsonFull(t *testing.T) {
 			Active:   false,
 			Conditions: []ConditionInfo{
 				{
-					OnMatch: ConditionEnabled,
-					OnMiss:  ConditionDisabled,
+					OnMatch: ConditionFlagEnabled,
+					OnMiss:  ConditionFlagDisabled,
 					Condition: &ConditionSample{
 						Tags: []string{},
 						Rate: 0.1,
@@ -272,6 +279,7 @@ func TestParseConditionJsonFull(t *testing.T) {
 			},
 		},
 	}
+	initConditionFlags(expected)
 	assert.Equal(t, expected, flags)
 }
 

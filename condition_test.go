@@ -129,6 +129,134 @@ func TestConditionInList(t *testing.T) {
 	assert.IsType(t, ErrMissingTag{}, err)
 }
 
-// TODO
-// multiple conditions in a flag
-// default actions
+func TestConditionFlag(t *testing.T) {
+	t.Parallel()
+
+	rnd := rand.New(rand.NewSource(0))
+
+	// Simplest flag ever
+	flag := &ConditionFlag{
+		FlagName: "test",
+		Active:   true,
+		Conditions: []ConditionInfo{
+			{
+				OnMatch:   ConditionFlagEnabled,
+				OnMiss:    ConditionFlagDisabled,
+				Condition: &ConditionSample{Rate: 1},
+			},
+		},
+	}
+	flag.Init()
+	en, err := flag.Enabled(rnd, nil)
+	assert.NoError(t, err)
+	assert.True(t, en)
+
+	// Use of Next and whitelists
+	flag = &ConditionFlag{
+		FlagName: "test",
+		Active:   true,
+		Conditions: []ConditionInfo{
+			{
+				OnMatch:   ConditionFlagEnabled,
+				OnMiss:    ConditionNext,
+				Condition: &ConditionInList{Tag: "a", Values: []string{"x", "y"}},
+			},
+			{
+				OnMatch:   ConditionFlagEnabled,
+				OnMiss:    ConditionFlagDisabled,
+				Condition: &ConditionInList{Tag: "b", Values: []string{"u", "v"}},
+			},
+		},
+	}
+	flag.Init()
+	en, err = flag.Enabled(rnd, map[string]string{"a": "e", "b": "e"})
+	assert.NoError(t, err)
+	assert.False(t, en)
+	en, err = flag.Enabled(rnd, map[string]string{"a": "x", "b": "e"})
+	assert.NoError(t, err)
+	assert.True(t, en)
+	en, err = flag.Enabled(rnd, map[string]string{"a": "e", "b": "u"})
+	assert.NoError(t, err)
+	assert.True(t, en)
+	en, err = flag.Enabled(rnd, map[string]string{"a": "x", "b": "u"})
+	assert.NoError(t, err)
+	assert.True(t, en)
+	en, err = flag.Enabled(rnd, map[string]string{"a": "FAKE"})
+	assert.Error(t, err)
+	assert.IsType(t, ErrMissingTag{}, err)
+	assert.False(t, en)
+
+	// When we get to the end, it's considered disabled
+	flag = &ConditionFlag{
+		FlagName:   "test",
+		Active:     true,
+		Conditions: []ConditionInfo{},
+	}
+	flag.Init()
+	en, err = flag.Enabled(rnd, nil)
+	assert.NoError(t, err)
+	assert.False(t, en)
+
+	// There exist some pretty pointless action combinations, but they still work
+	flag = &ConditionFlag{
+		FlagName: "test",
+		Active:   true,
+		Conditions: []ConditionInfo{
+			{
+				// Whatever happens, this is disabled!
+				OnMatch:   ConditionFlagDisabled,
+				OnMiss:    ConditionFlagDisabled,
+				Condition: &ConditionSample{Rate: 1},
+			},
+		},
+	}
+	flag.Init()
+	en, err = flag.Enabled(rnd, nil)
+	assert.NoError(t, err)
+	assert.False(t, en)
+
+	// Inactive flags are never on
+	flag = &ConditionFlag{
+		FlagName: "test",
+		Active:   false,
+		Conditions: []ConditionInfo{
+			{
+				OnMatch:   ConditionFlagEnabled,
+				OnMiss:    ConditionFlagDisabled,
+				Condition: &ConditionSample{Rate: 1},
+			},
+		},
+	}
+	flag.Init()
+	en, err = flag.Enabled(rnd, nil)
+	assert.NoError(t, err)
+	assert.False(t, en)
+
+	// Can use randomness
+	flag = &ConditionFlag{
+		FlagName: "test",
+		Active:   true,
+		Conditions: []ConditionInfo{
+			{
+				OnMatch:   ConditionNext,
+				OnMiss:    ConditionFlagDisabled,
+				Condition: &ConditionSample{Rate: 0.8},
+			},
+			{
+				OnMatch:   ConditionFlagEnabled,
+				OnMiss:    ConditionFlagDisabled,
+				Condition: &ConditionSample{Rate: 0.3},
+			},
+		},
+	}
+	flag.Init()
+	count := 0
+	for i := 0; i < 10000; i++ {
+		en, err = flag.Enabled(rnd, map[string]string{"a": "e", "b": "e"})
+		assert.NoError(t, err)
+		if en {
+			count++
+		}
+	}
+	assert.InDelta(t, 2400, count, 200)
+}

@@ -59,7 +59,7 @@ type conditionInfoRaw struct {
 func (c *conditionInfoRaw) validateActions() error {
 	// By default, keep trying conditions until one matches
 	if c.OnMatch == "" {
-		c.OnMatch = ConditionEnabled
+		c.OnMatch = ConditionFlagEnabled
 	}
 	if c.OnMiss == "" {
 		c.OnMiss = ConditionNext
@@ -146,9 +146,7 @@ func (ConditionJsonFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 	// Convert to interface
 	flags := []Flag{}
 	for i := range conditionFile.Flags {
-		for _, cond := range conditionFile.Flags[i].Conditions {
-			cond.Condition.Init()
-		}
+		conditionFile.Flags[i].Init()
 		flags = append(flags, &conditionFile.Flags[i])
 	}
 
