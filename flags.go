@@ -15,7 +15,7 @@ import (
 
 const statsdAddress = "127.0.0.1:8200"
 
-const lastAssertInterval = 60 * time.Second
+const lastAssertInterval = 5 * time.Minute
 const defaultStalenessThreshold = 10 * time.Minute
 
 // An interface reflecting the parts of statsd that we need, so we can mock it
@@ -30,14 +30,15 @@ type goforit struct {
 	stalenessMtx       sync.RWMutex
 	stalenessThreshold time.Duration
 
-	flagsMtx sync.RWMutex
-	flags    map[string]Flag
+	flagsMtx            sync.RWMutex
+	flags               map[string]Flag
+	lastFlagRefreshTime time.Time
 
 	stats statsdClient
 
-	lastFlagRefreshTime time.Time
 	// Last time we alerted that flags may be out of date
-	lastAssert time.Time
+	lastAssertMtx sync.Mutex
+	lastAssert    time.Time
 
 	// rand is not concurrency safe, in general
 	rndMtx sync.Mutex
@@ -71,30 +72,60 @@ func (g *goforit) rand() float64 {
 	return g.rnd.Float64()
 }
 
+func (g *goforit) getStalenessThreshold() time.Duration {
+	g.stalenessMtx.RLock()
+	defer g.stalenessMtx.RUnlock()
+	return g.stalenessThreshold
+}
+
+// Check if a time is stale.
+func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg string, checkLastAssert bool) {
+	if t.IsZero() {
+		// Not really useful to treat this as a real time
+		return
+	}
+
+	// Report the staleness
+	staleness := time.Since(t)
+	g.stats.Histogram(metric, staleness.Seconds(), nil, metricRate)
+
+	// Log if we're old
+	thresh := g.getStalenessThreshold()
+	if thresh == 0 {
+		return
+	}
+	if staleness <= thresh {
+		return
+	}
+
+	if checkLastAssert {
+		// Don't log too often!
+		g.lastAssertMtx.Lock()
+		defer g.lastAssertMtx.Unlock()
+		if time.Since(g.lastAssert) > lastAssertInterval {
+			return
+		}
+		g.lastAssert = time.Now()
+	}
+	g.logger.Printf(msg, staleness, thresh)
+}
+
 // Enabled returns a boolean indicating
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
+	var lastRefreshTime time.Time
 	defer func() {
 		var gauge float64
 		if enabled {
 			gauge = 1
 		}
 		g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
+		g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", .01,
+			"Refresh() cycle has not run in %s, past our threshold (%s)", true)
 	}()
 
-	defer func() {
-		g.flagsMtx.RLock()
-		defer g.flagsMtx.RUnlock()
-		staleness := time.Since(g.lastFlagRefreshTime)
-		//histogram of cache process age
-		g.stats.Histogram("goforit.flags.last_refresh_s", staleness.Seconds(), nil, .01)
-		if staleness > g.stalenessThreshold && time.Since(g.lastAssert) > lastAssertInterval {
-			g.lastAssert = time.Now()
-			g.logger.Printf("Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, g.stalenessThreshold)
-		}
-	}()
 	// Check for an override.
 	if ctx != nil {
 		if ov, ok := ctx.Value(overrideContextKey).(overrides); ok {
@@ -110,6 +141,7 @@ func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 		enabled = false
 		return
 	}
+	lastRefreshTime = g.lastFlagRefreshTime
 	flag := g.flags[name]
 
 	// equality should be strict
@@ -133,7 +165,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	defer func() {
 		g.stats.SimpleServiceCheck("goforit.refreshFlags.present", checkStatus)
 	}()
-	refreshedFlags, age, err := backend.Refresh()
+	refreshedFlags, updated, err := backend.Refresh()
 	if err != nil {
 		checkStatus = statsd.Warn
 		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
@@ -145,17 +177,9 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	for _, flag := range refreshedFlags {
 		fmap[flag.Name] = flag
 	}
-	if !age.IsZero() {
-		g.stalenessMtx.RLock()
-		defer g.stalenessMtx.RUnlock()
-		staleness := time.Since(age)
-		stale := staleness > g.stalenessThreshold
-		//histogram of staleness
-		g.stats.Histogram("goforit.flags.cache_file_age_s", staleness.Seconds(), nil, .1)
-		if stale {
-			g.logger.Printf("Backend is stale (%s) past our threshold (%s)", staleness, g.stalenessThreshold)
-		}
-	}
+	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
+		"Backend is stale (%s) past our threshold (%s)", false)
+
 	// update the package-level flags
 	// which are protected by the mutex
 	g.flagsMtx.Lock()
