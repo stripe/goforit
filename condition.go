@@ -1,6 +1,13 @@
 package goforit
 
-import "math/rand"
+import (
+	"crypto/sha1"
+	"encoding/binary"
+	"io"
+	"math"
+	"math/rand"
+	"sort"
+)
 
 // A Condition determines whether a condition is true for a given flag
 type Condition interface {
@@ -80,7 +87,34 @@ func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]str
 		return rnd.Float64() < c.Rate, nil
 	}
 
-	panic("implement me") // TODO
+	// If we have tags, be deterministic based on their hash
+	hash := sha1.New()
+	io.WriteString(hash, flag)
+
+	// Add tags to our hash, in order
+	keys := []string{}
+	for _, k := range c.Tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	zero := []byte{0} // nil-separate everything
+	for _, k := range keys {
+		hash.Write(zero)
+		io.WriteString(hash, k)
+		hash.Write(zero)
+		v, ok := tags[k]
+		if !ok {
+			return false, ErrMissingTag{flag, k}
+		}
+		io.WriteString(hash, v)
+	}
+
+	// Turn our sum into a float
+	buf := hash.Sum(nil)
+	ival := binary.LittleEndian.Uint64(buf)
+	fval := float64(ival) / float64(math.MaxUint64)
+
+	return fval < c.Rate, nil
 }
 
 func init() {
