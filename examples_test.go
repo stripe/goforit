@@ -19,12 +19,12 @@ func Example() {
 		fmt.Println("The go.sun.mercury feature is enabled for 100% of requests")
 	}
 	// Same thing.
-	enabled, err = Enabled(nil, "go.sun.mercury",nil)
+	enabled, err = Enabled(nil, "go.sun.mercury", nil)
 	if err == nil && enabled {
 		fmt.Println("The go.sun.mercury feature is enabled for 100% of requests")
 	}
 
-	enabled, err = Enabled(ctx, "go.stars.money",nil)
+	enabled, err = Enabled(ctx, "go.stars.money", nil)
 	if err == nil && enabled {
 		fmt.Println("The go.stars.money feature is enabled for 50% of requests")
 	}

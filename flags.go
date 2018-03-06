@@ -1,22 +1,22 @@
 package goforit
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
-	"sort"
-	"crypto/sha1"
-	"encoding/hex"
-	"bytes"
-	"errors"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -101,10 +101,10 @@ type MatchListRule struct {
 }
 
 type RateRule struct {
-	Rate    float64
+	Rate       float64
 	Properties []string
-	OnMatch string `json:"on_match"`
-	OnMiss  string `json:"on_miss"`
+	OnMatch    string `json:"on_match"`
+	OnMiss     string `json:"on_miss"`
 }
 
 type FlagJSONFormat struct {
@@ -114,8 +114,8 @@ type FlagJSONFormat struct {
 }
 
 type JSONFormat struct {
-	Flags       []FlagJSONFormat  `json:"flags"`
-	UpdatedTime float64 `json:"updated"`
+	Flags       []FlagJSONFormat `json:"flags"`
+	UpdatedTime float64          `json:"updated"`
 }
 
 var flags = map[string]Flag{}
@@ -177,20 +177,20 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 		if res {
 			matchBehavior = r.onMatch()
 		} else {
-			matchBehavior= r.onMiss()
+			matchBehavior = r.onMiss()
 		}
 		switch matchBehavior {
-			case "on":
-				enabled = true
-				return
-			case "off":
-				enabled = false
-				return
-			case "match_list":
-				continue
-			default:
-				err = errors.New("unknown match behavior: " + matchBehavior)
-				return
+		case "on":
+			enabled = true
+			return
+		case "off":
+			enabled = false
+			return
+		case "match_list":
+			continue
+		default:
+			err = errors.New("unknown match behavior: " + matchBehavior)
+			return
 		}
 	}
 	enabled = true
@@ -215,10 +215,10 @@ func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
 		sort.Strings(r.Properties)
 		var buffer bytes.Buffer
 		for _, val := range r.Properties {
-			 buffer.WriteString(getProperty(ctx, props, val))
+			buffer.WriteString(getProperty(ctx, props, val))
 		}
 		h.Write([]byte(buffer.String()))
-    bs := h.Sum(nil)
+		bs := h.Sum(nil)
 		encodedStr := hex.EncodeToString(bs)
 		// get the most significant 16 digits
 		x, _ := strconv.ParseUint(encodedStr[0:4], 16, 16)
@@ -226,7 +226,7 @@ func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
 		// is less than (rate * 2^16)
 		return float64(x) < (r.Rate * float64(1<<16))
 	} else {
-		f := rand.Float64();
+		f := rand.Float64()
 		return f < r.Rate
 	}
 }
@@ -316,7 +316,7 @@ func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
 	// we first unmarshall into the intermediate FlagJSONFormat
 	// then do another pass to parse the different rule types per flag
 	flags := make([]Flag, len(v.Flags))
- 	for i, flag := range v.Flags {
+	for i, flag := range v.Flags {
 		rules := make([]Rule, len(flag.Rules))
 		for i2, r := range flag.Rules {
 
@@ -346,7 +346,7 @@ func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
 			}
 
 			err = json.Unmarshal(r, actual)
-			if(err != nil) {
+			if err != nil {
 				return nil, time.Time{}, err
 			}
 

@@ -56,9 +56,9 @@ func TestParseFlagsCSV(t *testing.T) {
 					true,
 					[]Rule{
 						RateRule{
-							Rate: 0.5,
+							Rate:    0.5,
 							OnMatch: "on",
-							OnMiss: "off",
+							OnMiss:  "off",
 						},
 					},
 				},
@@ -223,7 +223,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	RefreshFlags(backend)
 
 	flag := flags[repeatedFlag]
-	assert.Equal(t, flag, Flag{repeatedFlag, true, []Rule{RateRule{Rate: lastValue, OnMatch: "on", OnMiss: "off",}}})
+	assert.Equal(t, flag, Flag{repeatedFlag, true, []Rule{RateRule{Rate: lastValue, OnMatch: "on", OnMiss: "off"}}})
 
 }
 
