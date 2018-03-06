@@ -21,6 +21,41 @@ const seed = 5194304667978865136
 
 const ε = .02
 
+type mockStatsd struct {
+	lock            sync.RWMutex
+	histogramValues map[string][]float64
+}
+
+func (m *mockStatsd) Gauge(string, float64, []string, float64) error {
+	return nil
+}
+
+func (m *mockStatsd) Count(string, int64, []string, float64) error {
+	return nil
+}
+
+func (m *mockStatsd) SimpleServiceCheck(string, statsd.ServiceCheckStatus) error {
+	return nil
+}
+
+func (m *mockStatsd) Histogram(name string, value float64, tags []string, rate float64) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if m.histogramValues == nil {
+		m.histogramValues = make(map[string][]float64)
+	}
+	m.histogramValues[name] = append(m.histogramValues[name], value)
+	return nil
+}
+
+func (m *mockStatsd) getHistogramValues(name string) []float64 {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	s := make([]float64, len(m.histogramValues[name]))
+	copy(s, m.histogramValues[name])
+	return s
+}
+
 // Build a goforit for testing
 // Also return the log output
 func testGoforit() (*goforit, *bytes.Buffer) {
@@ -28,12 +63,14 @@ func testGoforit() (*goforit, *bytes.Buffer) {
 	g.rnd = rand.New(rand.NewSource(seed))
 	var buf bytes.Buffer
 	g.logger = log.New(&buf, "", 9)
+	g.stats = &mockStatsd{}
 	return g, &buf
 }
 
 func TestGlobal(t *testing.T) {
 	// Not parallel, testing global behavior
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	globalGoforit.stats = &mockStatsd{} // prevent logging real metrics
 
 	ticker := Init(DefaultInterval, backend)
 	defer ticker.Stop()
@@ -228,33 +265,6 @@ func TestOverrideWithoutInit(t *testing.T) {
 	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
 }
 
-type mockHistogramClient struct {
-	targetName      string
-	histogramValues []float64
-	lock            sync.RWMutex
-}
-
-func (m *mockHistogramClient) Gauge(string, float64, []string, float64) error {
-	return nil
-}
-
-func (m *mockHistogramClient) Count(string, int64, []string, float64) error {
-	return nil
-}
-
-func (m *mockHistogramClient) SimpleServiceCheck(string, statsd.ServiceCheckStatus) error {
-	return nil
-}
-
-func (m *mockHistogramClient) Histogram(name string, value float64, tags []string, rate float64) error {
-	if m.targetName == name {
-		m.lock.Lock()
-		defer m.lock.Unlock()
-		m.histogramValues = append(m.histogramValues, value)
-	}
-	return nil
-}
-
 type dummyAgeBackend struct {
 	t   time.Time
 	mtx sync.RWMutex
@@ -271,9 +281,6 @@ func TestCacheFileMetric(t *testing.T) {
 	t.Parallel()
 
 	g, _ := testGoforit()
-	mockStats := &mockHistogramClient{targetName: "goforit.flags.cache_file_age_s"}
-	g.stats = mockStats
-
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
 	ticker := g.Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
@@ -286,14 +293,11 @@ func TestCacheFileMetric(t *testing.T) {
 	}()
 	time.Sleep(50 * time.Millisecond)
 
-	mockStats.lock.RLock()
-	defer mockStats.lock.RUnlock()
-
 	// We expect something like: [600, 600.01, ..., 0.0, 0.01, ...]
 	last := math.Inf(-1)
 	old := 0
 	recent := 0
-	for _, v := range mockStats.histogramValues {
+	for _, v := range g.stats.(*mockStatsd).getHistogramValues("goforit.flags.cache_file_age_s") {
 		if v > 300 {
 			// Should be older than last time
 			assert.True(t, v > last)
@@ -321,16 +325,13 @@ func TestRefreshCycleMetric(t *testing.T) {
 	t.Parallel()
 
 	g, _ := testGoforit()
-	mockStats := &mockHistogramClient{targetName: "goforit.flags.last_refresh_s"}
-	g.stats = mockStats
-	ctx := context.Background()
 
 	backend := &dummyBackend{}
 	ticker := g.Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
 
 	for i := 0; i < 10; i++ {
-		g.Enabled(ctx, "go.sun.money")
+		g.Enabled(nil, "go.sun.money")
 		time.Sleep(3 * time.Millisecond)
 	}
 
@@ -338,16 +339,14 @@ func TestRefreshCycleMetric(t *testing.T) {
 	ticker.Stop()
 
 	for i := 0; i < 10; i++ {
-		g.Enabled(ctx, "go.sun.money")
+		g.Enabled(nil, "go.sun.money")
 		time.Sleep(3 * time.Millisecond)
 	}
 
-	mockStats.lock.RLock()
-	defer mockStats.lock.RUnlock()
-
+	values := g.stats.(*mockStatsd).getHistogramValues("goforit.flags.last_refresh_s")
 	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
 	for i := 0; i < 10; i++ {
-		v := mockStats.histogramValues[i]
+		v := values[i]
 		// Should be ~< 10ms
 		assert.InDelta(t, 0.005, v, 0.010)
 	}
@@ -355,7 +354,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	last := math.Inf(-1)
 	large := 0
 	for i := 10; i < 20; i++ {
-		v := mockStats.histogramValues[i]
+		v := values[i]
 		assert.True(t, v > last)
 		last = v
 		if v > 0.012 {
