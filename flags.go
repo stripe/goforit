@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
-
-	"os"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -16,7 +15,6 @@ import (
 const statsdAddress = "127.0.0.1:8200"
 
 const lastAssertInterval = 5 * time.Minute
-const defaultStalenessThreshold = 10 * time.Minute
 
 // An interface reflecting the parts of statsd that we need, so we can mock it
 type statsdClient interface {
@@ -59,11 +57,10 @@ type Flag struct {
 func newWithoutInit() *goforit {
 	stats, _ := statsd.New(statsdAddress)
 	return &goforit{
-		stats:              stats,
-		flags:              map[string]Flag{},
-		stalenessThreshold: defaultStalenessThreshold,
-		rnd:                rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger:             log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		stats:  stats,
+		flags:  map[string]Flag{},
+		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
+		logger: log.New(os.Stderr, "[goforit] ", log.LstdFlags),
 	}
 }
 
@@ -110,7 +107,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 		// Don't log too often!
 		g.lastAssertMtx.Lock()
 		defer g.lastAssertMtx.Unlock()
-		if time.Since(g.lastAssert) > lastAssertInterval {
+		if time.Since(g.lastAssert) < lastAssertInterval {
 			return
 		}
 		g.lastAssert = time.Now()
@@ -131,7 +128,7 @@ func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 		}
 		g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
 		g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", .01,
-			"Refresh() cycle has not run in %s, past our threshold (%s)", true)
+			"Refresh cycle has not run in %s, past our threshold (%s)", true)
 	}()
 
 	// Check for an override.
@@ -207,15 +204,17 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 // init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
 func (g *goforit) init(interval time.Duration, backend Backend) {
-
-	g.ticker = time.NewTicker(interval)
 	g.RefreshFlags(backend)
+	if interval != 0 {
+		ticker := time.NewTicker(interval)
+		g.ticker = ticker
 
-	go func() {
-		for _ = range g.ticker.C {
-			g.RefreshFlags(backend)
-		}
-	}()
+		go func() {
+			for _ = range ticker.C {
+				g.RefreshFlags(backend)
+			}
+		}()
+	}
 }
 
 // A unique context key for overrides
@@ -241,6 +240,9 @@ func Override(ctx context.Context, name string, value bool) context.Context {
 // Close releases resources held
 // It's still safe to call Enabled()
 func (g *goforit) Close() error {
-	g.ticker.Stop()
+	if g.ticker != nil {
+		g.ticker.Stop()
+		g.ticker = nil
+	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func testGoforit(interval time.Duration, backend Backend) (*goforit, *bytes.Buff
 	g.logger = log.New(&buf, "", 9)
 	g.stats = &mockStatsd{}
 
-	if interval != 0 && backend != nil {
+	if backend != nil {
 		g.init(interval, backend)
 	}
 
@@ -359,4 +360,58 @@ func TestRefreshCycleMetric(t *testing.T) {
 		}
 	}
 	assert.True(t, large > 2)
+}
+
+func TestStaleFile(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
+	g, buf := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
+	g.SetStalenessThreshold(10*time.Minute + 42*time.Second)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Should see staleness warnings for backend
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.True(t, len(lines) > 2)
+	for _, line := range lines {
+		assert.Contains(t, line, "10m42")
+		assert.Contains(t, line, "Backend")
+	}
+}
+
+func TestNoStaleFile(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
+	g, buf := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Never set staleness, so no warnings
+	assert.Zero(t, buf.String())
+}
+
+func TestStaleRefresh(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyBackend{}
+	g, buf := testGoforit(10*time.Millisecond, backend)
+	g.SetStalenessThreshold(50 * time.Millisecond)
+
+	// Simulate stopping refresh
+	g.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	for i := 0; i < 10; i++ {
+		g.Enabled(nil, "go.sun.money")
+	}
+
+	// Should see just one staleness warning
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.Equal(t, 1, len(lines))
+	assert.Contains(t, lines[0], "Refresh")
+	assert.Contains(t, lines[0], "50ms")
 }
