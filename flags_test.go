@@ -3,6 +3,7 @@ package goforit
 import (
 	"context"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,6 +20,7 @@ const seed = 5194304667978865136
 const ε = .02
 
 func Reset() {
+	rand.Seed(seed)
 	flags = map[string]Flag{}
 	flagsMtx = sync.RWMutex{}
 	stats, _ = statsd.New(statsdAddress)
