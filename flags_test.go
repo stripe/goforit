@@ -58,12 +58,17 @@ func (m *mockStatsd) getHistogramValues(name string) []float64 {
 
 // Build a goforit for testing
 // Also return the log output
-func testGoforit() (*goforit, *bytes.Buffer) {
-	g := New()
+func testGoforit(interval time.Duration, backend Backend) (*goforit, *bytes.Buffer) {
+	g := newWithoutInit()
 	g.rnd = rand.New(rand.NewSource(seed))
 	var buf bytes.Buffer
 	g.logger = log.New(&buf, "", 9)
 	g.stats = &mockStatsd{}
+
+	if interval != 0 && backend != nil {
+		g.init(interval, backend)
+	}
+
 	return g, &buf
 }
 
@@ -72,8 +77,8 @@ func TestGlobal(t *testing.T) {
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
 	globalGoforit.stats = &mockStatsd{} // prevent logging real metrics
 
-	ticker := Init(DefaultInterval, backend)
-	defer ticker.Stop()
+	Init(DefaultInterval, backend)
+	defer Close()
 
 	assert.False(t, Enabled(nil, "go.sun.money"))
 	assert.True(t, Enabled(nil, "go.moon.mercury"))
@@ -84,11 +89,9 @@ func TestEnabled(t *testing.T) {
 
 	const iterations = 100000
 
-	g, _ := testGoforit()
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-
-	ticker := g.Init(DefaultInterval, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(DefaultInterval, backend)
+	defer g.Close()
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
 	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
@@ -137,13 +140,12 @@ func TestRefresh(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyBackend{}
-	g, _ := testGoforit()
+	g, _ := testGoforit(10*time.Millisecond, backend)
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
 	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury"))
 
-	ticker := g.Init(10*time.Millisecond, backend)
-	defer ticker.Stop()
+	defer g.Close()
 
 	// ensure refresh runs twice to avoid race conditions
 	// in which the Refresh method returns but the assertions get called
@@ -160,9 +162,8 @@ func TestRefresh(t *testing.T) {
 // that is enabled for 50% of operations.
 func BenchmarkEnabled(b *testing.B) {
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit()
-	ticker := g.Init(DefaultInterval, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -184,9 +185,8 @@ func TestOverride(t *testing.T) {
 	t.Parallel()
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit()
-	ticker := g.Init(DefaultInterval, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 	g.RefreshFlags(backend)
 
 	// Empty context gets values from backend.
@@ -253,7 +253,7 @@ func TestOverride(t *testing.T) {
 func TestOverrideWithoutInit(t *testing.T) {
 	t.Parallel()
 
-	g, _ := testGoforit()
+	g, _ := testGoforit(0, nil)
 
 	// Everything is false by default.
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
@@ -280,10 +280,9 @@ func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
 func TestCacheFileMetric(t *testing.T) {
 	t.Parallel()
 
-	g, _ := testGoforit()
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	ticker := g.Init(10*time.Millisecond, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 
 	time.Sleep(50 * time.Millisecond)
 	func() {
@@ -324,11 +323,9 @@ func TestCacheFileMetric(t *testing.T) {
 func TestRefreshCycleMetric(t *testing.T) {
 	t.Parallel()
 
-	g, _ := testGoforit()
-
-	backend := &dummyBackend{}
-	ticker := g.Init(10*time.Millisecond, backend)
-	defer ticker.Stop()
+	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 
 	for i := 0; i < 10; i++ {
 		g.Enabled(nil, "go.sun.money")
@@ -336,7 +333,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	}
 
 	// want to stop ticker to simulate Refresh() hanging
-	ticker.Stop()
+	g.Close()
 
 	for i := 0; i < 10; i++ {
 		g.Enabled(nil, "go.sun.money")

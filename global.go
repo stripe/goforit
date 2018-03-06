@@ -8,7 +8,7 @@ import (
 var globalGoforit *goforit
 
 func init() {
-	globalGoforit = New()
+	globalGoforit = newWithoutInit()
 }
 
 func Enabled(ctx context.Context, name string) (enabled bool) {
@@ -23,6 +23,10 @@ func SetStalenessThreshold(threshold time.Duration) {
 	globalGoforit.SetStalenessThreshold(threshold)
 }
 
-func Init(interval time.Duration, backend Backend) *time.Ticker {
-	return globalGoforit.Init(interval, backend)
+func Init(interval time.Duration, backend Backend) {
+	globalGoforit.init(interval, backend)
+}
+
+func Close() error {
+	return globalGoforit.Close()
 }

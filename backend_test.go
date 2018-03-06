@@ -95,9 +95,9 @@ func TestMultipleDefinitions(t *testing.T) {
 
 	const repeatedFlag = "go.sun.money"
 	const lastValue = 0.7
-	g, _ := testGoforit()
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
+	g, _ := testGoforit(0, backend)
 	g.RefreshFlags(backend)
 
 	flag := g.flags[repeatedFlag]

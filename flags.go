@@ -27,6 +27,8 @@ type statsdClient interface {
 }
 
 type goforit struct {
+	ticker *time.Ticker
+
 	stalenessMtx       sync.RWMutex
 	stalenessThreshold time.Duration
 
@@ -54,8 +56,7 @@ type Flag struct {
 	Rate float64
 }
 
-// New creates a new goforit
-func New() *goforit {
+func newWithoutInit() *goforit {
 	stats, _ := statsd.New(statsdAddress)
 	return &goforit{
 		stats:              stats,
@@ -64,6 +65,13 @@ func New() *goforit {
 		rnd:                rand.New(rand.NewSource(time.Now().UnixNano())),
 		logger:             log.New(os.Stderr, "[goforit] ", log.LstdFlags),
 	}
+}
+
+// New creates a new goforit
+func New(interval time.Duration, backend Backend) *goforit {
+	g := newWithoutInit()
+	g.init(interval, backend)
+	return g
 }
 
 func (g *goforit) rand() float64 {
@@ -196,20 +204,18 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 	g.stalenessThreshold = threshold
 }
 
-// Init initializes the flag backend, using the provided refresh function
+// init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
-// When the Ticker returned by Init is closed, updates will stop.
-func (g *goforit) Init(interval time.Duration, backend Backend) *time.Ticker {
+func (g *goforit) init(interval time.Duration, backend Backend) {
 
-	ticker := time.NewTicker(interval)
+	g.ticker = time.NewTicker(interval)
 	g.RefreshFlags(backend)
 
 	go func() {
-		for _ = range ticker.C {
+		for _ = range g.ticker.C {
 			g.RefreshFlags(backend)
 		}
 	}()
-	return ticker
 }
 
 // A unique context key for overrides
@@ -230,4 +236,11 @@ func Override(ctx context.Context, name string, value bool) context.Context {
 	}
 	ov[name] = value
 	return context.WithValue(ctx, overrideContextKey, ov)
+}
+
+// Close releases resources held
+// It's still safe to call Enabled()
+func (g *goforit) Close() error {
+	g.ticker.Stop()
+	return nil
 }
