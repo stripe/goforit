@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"os"
+
 	"github.com/DataDog/datadog-go/statsd"
 )
 
@@ -36,6 +38,12 @@ type goforit struct {
 	lastFlagRefreshTime time.Time
 	// Last time we alerted that flags may be out of date
 	lastAssert time.Time
+
+	// rand is not concurrency safe, in general
+	rndMtx sync.Mutex
+	rnd    *rand.Rand
+
+	logger *log.Logger
 }
 
 const DefaultInterval = 30 * time.Second
@@ -52,7 +60,15 @@ func New() *goforit {
 		stats:              stats,
 		flags:              map[string]Flag{},
 		stalenessThreshold: defaultStalenessThreshold,
+		rnd:                rand.New(rand.NewSource(time.Now().UnixNano())),
+		logger:             log.New(os.Stderr, "[goforit] ", log.LstdFlags),
 	}
+}
+
+func (g *goforit) rand() float64 {
+	g.rndMtx.Lock()
+	defer g.rndMtx.Unlock()
+	return g.rnd.Float64()
 }
 
 // Enabled returns a boolean indicating
@@ -76,7 +92,7 @@ func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 		g.stats.Histogram("goforit.flags.last_refresh_s", staleness.Seconds(), nil, .01)
 		if staleness > g.stalenessThreshold && time.Since(g.lastAssert) > lastAssertInterval {
 			g.lastAssert = time.Now()
-			log.Printf("[goforit] The Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, g.stalenessThreshold)
+			g.logger.Printf("Refresh() cycle has not ran in %s, past our threshold (%s)", staleness, g.stalenessThreshold)
 		}
 	}()
 	// Check for an override.
@@ -98,7 +114,7 @@ func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 
 	// equality should be strict
 	// because Float64() can return 0
-	if f := rand.Float64(); f < flag.Rate {
+	if f := g.rand(); f < flag.Rate {
 		enabled = true
 		return
 	}
@@ -121,7 +137,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	if err != nil {
 		checkStatus = statsd.Warn
 		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
-		log.Printf("[goforit] error refreshing flags: %s", err)
+		g.logger.Printf("Error refreshing flags: %s", err)
 		return
 	}
 
@@ -137,7 +153,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 		//histogram of staleness
 		g.stats.Histogram("goforit.flags.cache_file_age_s", staleness.Seconds(), nil, .1)
 		if stale {
-			log.Printf("[goforit] The backend is stale (%s) past our threshold (%s)", staleness, g.stalenessThreshold)
+			g.logger.Printf("Backend is stale (%s) past our threshold (%s)", staleness, g.stalenessThreshold)
 		}
 	}
 	// update the package-level flags

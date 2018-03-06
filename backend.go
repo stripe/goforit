@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"time"

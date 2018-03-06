@@ -20,8 +20,8 @@ const seed = 5194304667978865136
 const ε = .02
 
 func Reset() {
-	rand.Seed(seed)
 	globalGoforit = New()
+	globalGoforit.rnd = rand.New(rand.NewSource(seed))
 }
 
 func TestEnabled(t *testing.T) {
