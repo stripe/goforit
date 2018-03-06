@@ -202,11 +202,11 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 func (g *goforit) Init(interval time.Duration, backend Backend) *time.Ticker {
 
 	ticker := time.NewTicker(interval)
-	RefreshFlags(backend)
+	g.RefreshFlags(backend)
 
 	go func() {
 		for _ = range ticker.C {
-			RefreshFlags(backend)
+			g.RefreshFlags(backend)
 		}
 	}()
 	return ticker

@@ -9,6 +9,8 @@ import (
 )
 
 func TestParseFlagsCSV(t *testing.T) {
+	t.Parallel()
+
 	filename := filepath.Join("fixtures", "flags_example.csv")
 
 	type testcase struct {
@@ -52,6 +54,8 @@ func TestParseFlagsCSV(t *testing.T) {
 }
 
 func TestParseFlagsJSON(t *testing.T) {
+	t.Parallel()
+
 	filename := filepath.Join("fixtures", "flags_example.json")
 
 	type testcase struct {
@@ -87,14 +91,16 @@ func TestParseFlagsJSON(t *testing.T) {
 }
 
 func TestMultipleDefinitions(t *testing.T) {
+	t.Parallel()
+
 	const repeatedFlag = "go.sun.money"
 	const lastValue = 0.7
-	Reset()
+	g, _ := testGoforit()
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
-	RefreshFlags(backend)
+	g.RefreshFlags(backend)
 
-	flag := globalGoforit.flags[repeatedFlag]
+	flag := g.flags[repeatedFlag]
 	assert.Equal(t, flag, Flag{repeatedFlag, lastValue})
 
 }

@@ -1,7 +1,9 @@
 package goforit
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -19,29 +21,48 @@ const seed = 5194304667978865136
 
 const ε = .02
 
-func Reset() {
-	globalGoforit = New()
-	globalGoforit.rnd = rand.New(rand.NewSource(seed))
+// Build a goforit for testing
+// Also return the log output
+func testGoforit() (*goforit, *bytes.Buffer) {
+	g := New()
+	g.rnd = rand.New(rand.NewSource(seed))
+	var buf bytes.Buffer
+	g.logger = log.New(&buf, "", 9)
+	return g, &buf
 }
 
-func TestEnabled(t *testing.T) {
-	const iterations = 100000
-
-	Reset()
+func TestGlobal(t *testing.T) {
+	// Not parallel, testing global behavior
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+
 	ticker := Init(DefaultInterval, backend)
 	defer ticker.Stop()
 
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
-
-	// nil is equivalent to empty context
 	assert.False(t, Enabled(nil, "go.sun.money"))
 	assert.True(t, Enabled(nil, "go.moon.mercury"))
+}
+
+func TestEnabled(t *testing.T) {
+	t.Parallel()
+
+	const iterations = 100000
+
+	g, _ := testGoforit()
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+
+	ticker := g.Init(DefaultInterval, backend)
+	defer ticker.Stop()
+
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
+
+	// nil is equivalent to empty context
+	assert.False(t, g.Enabled(nil, "go.sun.money"))
+	assert.True(t, g.Enabled(nil, "go.moon.mercury"))
 
 	count := 0
 	for i := 0; i < iterations; i++ {
-		if Enabled(context.Background(), "go.stars.money") {
+		if g.Enabled(context.Background(), "go.stars.money") {
 			count++
 		}
 	}
@@ -76,13 +97,15 @@ func (b *dummyBackend) Refresh() (map[string]Flag, time.Time, error) {
 }
 
 func TestRefresh(t *testing.T) {
-	Reset()
+	t.Parallel()
+
 	backend := &dummyBackend{}
+	g, _ := testGoforit()
 
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.False(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
+	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury"))
 
-	ticker := Init(10*time.Millisecond, backend)
+	ticker := g.Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
 
 	// ensure refresh runs twice to avoid race conditions
@@ -92,21 +115,21 @@ func TestRefresh(t *testing.T) {
 		<-time.After(10 * time.Millisecond)
 	}
 
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
 }
 
 // BenchmarkEnabled runs a benchmark for a feature flag
 // that is enabled for 50% of operations.
 func BenchmarkEnabled(b *testing.B) {
-	Reset()
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker := Init(DefaultInterval, backend)
+	g, _ := testGoforit()
+	ticker := g.Init(DefaultInterval, backend)
 	defer ticker.Stop()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = Enabled(context.Background(), "go.stars.money")
+		_ = g.Enabled(context.Background(), "go.stars.money")
 	}
 }
 
@@ -121,85 +144,88 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 }
 
 func TestOverride(t *testing.T) {
-	Reset()
+	t.Parallel()
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker := Init(DefaultInterval, backend)
+	g, _ := testGoforit()
+	ticker := g.Init(DefaultInterval, backend)
 	defer ticker.Stop()
-	RefreshFlags(backend)
+	g.RefreshFlags(backend)
 
 	// Empty context gets values from backend.
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, Enabled(context.Background(), "go.moon.mercury"))
-	assert.False(t, Enabled(context.Background(), "go.extra"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.extra"))
 
 	// Nil is equivalent to empty context.
-	assert.False(t, Enabled(nil, "go.sun.money"))
-	assert.True(t, Enabled(nil, "go.moon.mercury"))
-	assert.False(t, Enabled(nil, "go.extra"))
+	assert.False(t, g.Enabled(nil, "go.sun.money"))
+	assert.True(t, g.Enabled(nil, "go.moon.mercury"))
+	assert.False(t, g.Enabled(nil, "go.extra"))
 
 	// Can override to true in context.
 	ctx := context.Background()
 	ctx = Override(ctx, "go.sun.money", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.True(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.True(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, g.Enabled(ctx, "go.extra"))
 
 	// Can override to false.
 	ctx = Override(ctx, "go.moon.mercury", false)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, g.Enabled(ctx, "go.extra"))
 
 	// Can override brand new flag.
 	ctx = Override(ctx, "go.extra", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.True(t, Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.True(t, g.Enabled(ctx, "go.extra"))
 
 	// Can override an override.
 	ctx = Override(ctx, "go.extra", false)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, g.Enabled(ctx, "go.extra"))
 
 	// Separate contexts don't interfere with each other.
 	// This allows parallel tests that use feature flags.
 	ctx2 := Override(context.Background(), "go.extra", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
-	assert.False(t, Enabled(ctx2, "go.sun.money"))
-	assert.True(t, Enabled(ctx2, "go.moon.mercury"))
-	assert.True(t, Enabled(ctx2, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, g.Enabled(ctx, "go.extra"))
+	assert.False(t, g.Enabled(ctx2, "go.sun.money"))
+	assert.True(t, g.Enabled(ctx2, "go.moon.mercury"))
+	assert.True(t, g.Enabled(ctx2, "go.extra"))
 
 	// Overrides apply to child contexts.
 	child := context.WithValue(ctx, "foo", "bar")
-	assert.True(t, Enabled(child, "go.sun.money"))
-	assert.False(t, Enabled(child, "go.moon.mercury"))
-	assert.False(t, Enabled(child, "go.extra"))
+	assert.True(t, g.Enabled(child, "go.sun.money"))
+	assert.False(t, g.Enabled(child, "go.moon.mercury"))
+	assert.False(t, g.Enabled(child, "go.extra"))
 
 	// Changes to child contexts don't affect parents.
 	child = Override(child, "go.moon.mercury", true)
-	assert.True(t, Enabled(child, "go.sun.money"))
-	assert.True(t, Enabled(child, "go.moon.mercury"))
-	assert.False(t, Enabled(child, "go.extra"))
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(child, "go.sun.money"))
+	assert.True(t, g.Enabled(child, "go.moon.mercury"))
+	assert.False(t, g.Enabled(child, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.False(t, g.Enabled(ctx, "go.extra"))
 }
 
 func TestOverrideWithoutInit(t *testing.T) {
-	Reset()
+	t.Parallel()
+
+	g, _ := testGoforit()
 
 	// Everything is false by default.
-	assert.False(t, Enabled(context.Background(), "go.sun.money"))
-	assert.False(t, Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
+	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury"))
 
 	// Can override.
 	ctx := Override(context.Background(), "go.sun.money", true)
-	assert.True(t, Enabled(ctx, "go.sun.money"))
-	assert.False(t, Enabled(ctx, "go.moon.mercury"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money"))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
 }
 
 type mockHistogramClient struct {
@@ -242,12 +268,14 @@ func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
 
 // Test to see proper monitoring of age of the flags dump
 func TestCacheFileMetric(t *testing.T) {
-	Reset()
+	t.Parallel()
+
+	g, _ := testGoforit()
 	mockStats := &mockHistogramClient{targetName: "goforit.flags.cache_file_age_s"}
-	globalGoforit.stats = mockStats
+	g.stats = mockStats
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	ticker := Init(10*time.Millisecond, backend)
+	ticker := g.Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
 
 	time.Sleep(50 * time.Millisecond)
@@ -290,17 +318,19 @@ func TestCacheFileMetric(t *testing.T) {
 
 // Test to see proper monitoring of refreshing the flags dump file from disc
 func TestRefreshCycleMetric(t *testing.T) {
-	Reset()
+	t.Parallel()
+
+	g, _ := testGoforit()
 	mockStats := &mockHistogramClient{targetName: "goforit.flags.last_refresh_s"}
-	globalGoforit.stats = mockStats
+	g.stats = mockStats
 	ctx := context.Background()
 
 	backend := &dummyBackend{}
-	ticker := Init(10*time.Millisecond, backend)
+	ticker := g.Init(10*time.Millisecond, backend)
 	defer ticker.Stop()
 
 	for i := 0; i < 10; i++ {
-		Enabled(ctx, "go.sun.money")
+		g.Enabled(ctx, "go.sun.money")
 		time.Sleep(3 * time.Millisecond)
 	}
 
@@ -308,7 +338,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	ticker.Stop()
 
 	for i := 0; i < 10; i++ {
-		Enabled(ctx, "go.sun.money")
+		g.Enabled(ctx, "go.sun.money")
 		time.Sleep(3 * time.Millisecond)
 	}
 
