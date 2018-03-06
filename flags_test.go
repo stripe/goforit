@@ -2,8 +2,6 @@ package goforit
 
 import (
 	"context"
-	"encoding/json"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // arbitrary but fixed for reproducible testing
@@ -310,25 +307,6 @@ func (m *mockHistogramClient) Histogram(name string, value float64, tags []strin
 		m.histogramValues = append(m.histogramValues, value)
 	}
 	return nil
-}
-
-func writeMockJSONFile(t *testing.T, path string, updatedPeriod time.Duration) {
-	flags := []Flag{{"go.sun.money", 1.0}}
-	updatedTime := time.Now().Add(updatedPeriod)
-	flagsJson := &JSONFormat{flags, float64(updatedTime.Unix())}
-
-	jsonData, err := json.Marshal(flagsJson)
-	require.NoError(t, err)
-
-	tmp, err := ioutil.TempFile(filepath.Dir(path), "flags-temp-")
-	require.NoError(t, err)
-	defer os.Remove(tmp.Name())
-	_, err = tmp.Write(jsonData)
-	require.NoError(t, err)
-	tmp.Close()
-
-	err = os.Rename(tmp.Name(), path)
-	require.NoError(t, err)
 }
 
 type dummyAgeBackend struct {
