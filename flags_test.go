@@ -203,10 +203,21 @@ func TestOverrideWithoutInit(t *testing.T) {
 }
 
 type mockHistogramClient struct {
-	*statsd.Client
 	targetName      string
 	histogramValues []float64
 	lock            sync.RWMutex
+}
+
+func (m *mockHistogramClient) Gauge(string, float64, []string, float64) error {
+	return nil
+}
+
+func (m *mockHistogramClient) Count(string, int64, []string, float64) error {
+	return nil
+}
+
+func (m *mockHistogramClient) SimpleServiceCheck(string, statsd.ServiceCheckStatus) error {
+	return nil
 }
 
 func (m *mockHistogramClient) Histogram(name string, value float64, tags []string, rate float64) error {
@@ -232,7 +243,7 @@ func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
 // Test to see proper monitoring of age of the flags dump
 func TestCacheFileMetric(t *testing.T) {
 	Reset()
-	mockStats := &mockHistogramClient{globalGoforit.stats.(*statsd.Client), "goforit.flags.cache_file_age_s", []float64{}, sync.RWMutex{}}
+	mockStats := &mockHistogramClient{targetName: "goforit.flags.cache_file_age_s"}
 	globalGoforit.stats = mockStats
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
@@ -280,7 +291,7 @@ func TestCacheFileMetric(t *testing.T) {
 // Test to see proper monitoring of refreshing the flags dump file from disc
 func TestRefreshCycleMetric(t *testing.T) {
 	Reset()
-	mockStats := &mockHistogramClient{globalGoforit.stats.(*statsd.Client), "goforit.flags.last_refresh_s", []float64{}, sync.RWMutex{}}
+	mockStats := &mockHistogramClient{targetName: "goforit.flags.last_refresh_s"}
 	globalGoforit.stats = mockStats
 	ctx := context.Background()
 
