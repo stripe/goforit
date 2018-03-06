@@ -9,9 +9,7 @@
         {
           "type": "sample",
           "rate": 0,
-          "tags": [],
-          "on_match": "enabled",
-          "on_miss": "disabled"
+          "tags": []
         }
       ]
     },
@@ -126,7 +124,7 @@
         },
         {
           "type": "sample",
-          "tag": ["request_id"],
+          "tags": ["request_id"],
           "rate": 0.1,
           "on_match": "enabled",
           "on_miss": "disabled"
@@ -146,7 +144,7 @@
         },
         {
           "type": "sample",
-          "tag": ["request_id"],
+          "tags": ["request_id"],
           "rate": 0.1,
           "on_match": "enabled",
           "on_miss": "disabled"
@@ -173,7 +171,7 @@
         },
         {
           "type": "sample",
-          "tag": ["request_id"],
+          "tags": ["request_id"],
           "rate": 0.2,
           "on_match": "enabled",
           "on_miss": "disabled"

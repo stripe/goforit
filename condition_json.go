@@ -10,6 +10,9 @@ import (
 	"reflect"
 )
 
+// ConditionJSONVersion is the supported version of the JSON file format
+const ConditionJSONVersion = 1
+
 // ErrConditionTypeUnknown indicates an unknown condition type seen when decoding
 type ErrConditionTypeUnknown struct {
 	Type string
@@ -26,6 +29,15 @@ type ErrConditionActionUnknown struct {
 
 func (e ErrConditionActionUnknown) Error() string {
 	return fmt.Sprintf("Unknown condition action %s", e.Action)
+}
+
+// ErrConditionJSONVersion indicates a bad version of a condition JSON file
+type ErrConditionJSONVersion struct {
+	Version int
+}
+
+func (e ErrConditionJSONVersion) Error() string {
+	return fmt.Sprintf("Unknown condition JSON file version %d", e.Version)
 }
 
 var conditionTypes map[string]Condition = map[string]Condition{}
@@ -65,6 +77,7 @@ func (c *conditionInfoRaw) validateActions() error {
 
 func (c *ConditionInfo) UnmarshalJSON(buf []byte) error {
 	// Unmarshal the raw condition, to find the type and actions
+	// This is not particularly efficient
 	var raw conditionInfoRaw
 	err := json.Unmarshal(buf, &raw)
 	if err != nil {
@@ -109,6 +122,15 @@ type conditionJSONFile struct {
 	Flags   []ConditionFlag `json:"flags"`
 }
 
+func (c *conditionJSONFile) validate() error {
+	if c.Version != ConditionJSONVersion {
+		return ErrConditionJSONVersion{c.Version}
+	}
+	// TODO: Detect mis-spellings, eg: tag -> tags
+	// Extra validation: Do actions make sense? Are any string empty?
+	return nil
+}
+
 func (ConditionJSONFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 	var conditionFile conditionJSONFile
 	decoder := json.NewDecoder(r)
@@ -117,12 +139,15 @@ func (ConditionJSONFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 		return nil, time.Time{}, err
 	}
 
-	// TODO: validate
+	err = conditionFile.validate()
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 
 	// Convert to interface
 	flags := []Flag{}
-	for _, f := range conditionFile.Flags {
-		flags = append(flags, &f)
+	for i := range conditionFile.Flags {
+		flags = append(flags, &conditionFile.Flags[i])
 	}
 
 	// Decode the time
