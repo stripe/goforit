@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"time"
-
 	"reflect"
+	"time"
 )
 
-// ConditionJSONVersion is the supported version of the JSON file format
-const ConditionJSONVersion = 1
+// ConditionJsonVersion is the supported version of the JSON file format
+const ConditionJsonVersion = 1
 
 // ErrConditionTypeUnknown indicates an unknown condition type seen when decoding
 type ErrConditionTypeUnknown struct {
@@ -31,12 +30,12 @@ func (e ErrConditionActionUnknown) Error() string {
 	return fmt.Sprintf("Unknown condition action %s", e.Action)
 }
 
-// ErrConditionJSONVersion indicates a bad version of a condition JSON file
-type ErrConditionJSONVersion struct {
+// ErrConditionJsonVersion indicates a bad version of a condition JSON file
+type ErrConditionJsonVersion struct {
 	Version int
 }
 
-func (e ErrConditionJSONVersion) Error() string {
+func (e ErrConditionJsonVersion) Error() string {
 	return fmt.Sprintf("Unknown condition JSON file version %d", e.Version)
 }
 
@@ -113,26 +112,26 @@ func (c *ConditionInfo) UnmarshalJSON(buf []byte) error {
 	return nil
 }
 
-// ConditionJSONFileFormat is a file format for reading JSON files with condition flags
-type ConditionJSONFileFormat struct{}
+// ConditionJsonFileFormat is a file format for reading JSON files with condition flags
+type ConditionJsonFileFormat struct{}
 
-type conditionJSONFile struct {
+type conditionJsonFile struct {
 	Version int             `json:"version"`
 	Updated float64         `json:"updated"`
 	Flags   []ConditionFlag `json:"flags"`
 }
 
-func (c *conditionJSONFile) validate() error {
-	if c.Version != ConditionJSONVersion {
-		return ErrConditionJSONVersion{c.Version}
+func (c *conditionJsonFile) validate() error {
+	if c.Version != ConditionJsonVersion {
+		return ErrConditionJsonVersion{c.Version}
 	}
-	// TODO: Detect mis-spellings, eg: tag -> tags
-	// Extra validation: Do actions make sense? Are any string empty?
+	// TODO: DisallowUnknownFields to detect mispellings, but it's 1.10 only
+	// Extra validation: Do actions make sense? Are any strings empty?
 	return nil
 }
 
-func (ConditionJSONFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
-	var conditionFile conditionJSONFile
+func (ConditionJsonFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
+	var conditionFile conditionJsonFile
 	decoder := json.NewDecoder(r)
 	err := decoder.Decode(&conditionFile)
 	if err != nil {

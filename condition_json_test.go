@@ -1,15 +1,18 @@
 package goforit
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"bytes"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseConditionJSONSimple(t *testing.T) {
+func TestParseConditionJsonSimple(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join("fixtures", "flags_condition_simple.json")
@@ -17,7 +20,7 @@ func TestParseConditionJSONSimple(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	flags, lastMod, err := ConditionJSONFileFormat{}.Read(file)
+	flags, lastMod, err := ConditionJsonFileFormat{}.Read(file)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1519247256), lastMod.Unix())
 
@@ -48,7 +51,7 @@ func TestParseConditionJSONSimple(t *testing.T) {
 	assert.Equal(t, expected, flags)
 }
 
-func TestParseConditionJSONFull(t *testing.T) {
+func TestParseConditionJsonFull(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join("fixtures", "flags_condition_example.json")
@@ -56,7 +59,7 @@ func TestParseConditionJSONFull(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	flags, lastMod, err := ConditionJSONFileFormat{}.Read(file)
+	flags, lastMod, err := ConditionJsonFileFormat{}.Read(file)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1519247256), lastMod.Unix())
 
@@ -273,9 +276,66 @@ func TestParseConditionJSONFull(t *testing.T) {
 	assert.Equal(t, expected, flags)
 }
 
-// TODO:
+func TestParseConditionJsonErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		ErrType error
+		Json    string
+	}{
+		{
+			ErrConditionTypeUnknown{}, `{
+				"version": 1,
+				"flags": [
+					{
+						"name": "test",
+						"active": true,
+						"conditions": [
+							{
+								"type": "FAKE"
+							}
+						]
+					}
+				]
+			}`,
+		},
+		{
+			ErrConditionActionUnknown{}, `{
+				"version": 1,
+				"flags": [
+					{
+						"name": "test",
+						"active": true,
+						"conditions": [
+							{
+								"type": "in_list",
+								"on_match": "FAKE"
+							}
+						]
+					}
+				]
+			}`,
+		},
+		{
+			ErrConditionJsonVersion{}, `{
+				"version": 99,
+				"flags": []
+			}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		name := fmt.Sprintf("%T", tc.ErrType)
+		t.Run(name, func(t *testing.T) {
+			buf := bytes.NewBufferString(tc.Json)
+			flags, lastMod, err := ConditionJsonFileFormat{}.Read(buf)
+			require.Empty(t, flags)
+			require.Zero(t, lastMod)
+			require.Error(t, err)
+			require.IsType(t, tc.ErrType, err)
+		})
+	}
+}
 
 // Condition types
 // Overall flag algorithm
-// Unmarshaling
-// Errors unmarshaling
