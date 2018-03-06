@@ -94,7 +94,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
 	RefreshFlags(backend)
 
-	flag := flags[repeatedFlag]
+	flag := globalGoforit.flags[repeatedFlag]
 	assert.Equal(t, flag, Flag{repeatedFlag, lastValue})
 
 }

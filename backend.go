@@ -34,7 +34,7 @@ type JSONFormat struct {
 func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
+		globalGoforit.stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
 	}()
 	f, err := os.Open(file)
 	if err != nil {

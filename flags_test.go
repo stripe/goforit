@@ -21,9 +21,7 @@ const ε = .02
 
 func Reset() {
 	rand.Seed(seed)
-	flags = map[string]Flag{}
-	flagsMtx = sync.RWMutex{}
-	stats, _ = statsd.New(statsdAddress)
+	initGlobal()
 }
 
 func TestEnabled(t *testing.T) {
@@ -234,8 +232,8 @@ func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
 // Test to see proper monitoring of age of the flags dump
 func TestCacheFileMetric(t *testing.T) {
 	Reset()
-	mockStats := &mockHistogramClient{stats.(*statsd.Client), "goforit.flags.cache_file_age_s", []float64{}, sync.RWMutex{}}
-	stats = mockStats
+	mockStats := &mockHistogramClient{globalGoforit.stats.(*statsd.Client), "goforit.flags.cache_file_age_s", []float64{}, sync.RWMutex{}}
+	globalGoforit.stats = mockStats
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
 	ticker := Init(10*time.Millisecond, backend)
@@ -282,8 +280,8 @@ func TestCacheFileMetric(t *testing.T) {
 // Test to see proper monitoring of refreshing the flags dump file from disc
 func TestRefreshCycleMetric(t *testing.T) {
 	Reset()
-	mockStats := &mockHistogramClient{stats.(*statsd.Client), "goforit.flags.last_refresh_s", []float64{}, sync.RWMutex{}}
-	stats = mockStats
+	mockStats := &mockHistogramClient{globalGoforit.stats.(*statsd.Client), "goforit.flags.last_refresh_s", []float64{}, sync.RWMutex{}}
+	globalGoforit.stats = mockStats
 	ctx := context.Background()
 
 	backend := &dummyBackend{}
