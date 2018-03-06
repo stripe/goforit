@@ -63,3 +63,16 @@ func (b *BackendBase) handleAge(age time.Duration) {
 func (b *BackendBase) Close() error {
 	return nil
 }
+
+type emptyBackend struct {
+	BackendBase
+}
+
+func (emptyBackend) Flag(name string) (Flag, time.Time, error) {
+	return SampleFlag{Rate: 0}, time.Time{}, nil
+}
+
+// NewEmptyBackend yields a backend that always says flags are off
+func NewEmptyBackend() Backend {
+	return &emptyBackend{}
+}
