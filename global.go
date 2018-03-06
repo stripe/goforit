@@ -15,8 +15,8 @@ func Enabled(ctx context.Context, name string) (enabled bool) {
 	return globalGoforit.Enabled(ctx, name)
 }
 
-func RefreshFlags(backend Backend) error {
-	return globalGoforit.RefreshFlags(backend)
+func RefreshFlags(backend Backend) {
+	globalGoforit.RefreshFlags(backend)
 }
 
 func SetStalenessThreshold(threshold time.Duration) {

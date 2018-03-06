@@ -8,14 +8,12 @@ import (
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/DataDog/datadog-go/statsd"
 )
 
 type Backend interface {
 	// Refresh returns a new set of flags.
 	// It also returns the age of these flags, or an empty time if no age is known.
-	Refresh(*goforit) (map[string]Flag, time.Time, error)
+	Refresh() (map[string]Flag, time.Time, error)
 }
 
 type csvFileBackend struct {
@@ -31,27 +29,21 @@ type JSONFormat struct {
 	UpdatedTime float64 `json:"updated"`
 }
 
-func readFile(g *goforit, file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
-	var checkStatus statsd.ServiceCheckStatus
-	defer func() {
-		g.stats.SimpleServiceCheck("goforit.refreshFlags."+backend+"FileBackend.present", checkStatus)
-	}()
+func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
 	f, err := os.Open(file)
 	if err != nil {
-		checkStatus = statsd.Warn
-		log.Print("[goforit] unable to open backend file:\n", err)
 		return nil, time.Time{}, err
 	}
 	defer f.Close()
 	return parse(f)
 }
 
-func (b jsonFileBackend) Refresh(g *goforit) (map[string]Flag, time.Time, error) {
-	return readFile(g, b.filename, "json", parseFlagsJSON)
+func (b jsonFileBackend) Refresh() (map[string]Flag, time.Time, error) {
+	return readFile(b.filename, "json", parseFlagsJSON)
 }
 
-func (b csvFileBackend) Refresh(g *goforit) (map[string]Flag, time.Time, error) {
-	return readFile(g, b.filename, "csv", parseFlagsCSV)
+func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
+	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
 func flagsToMap(flags []Flag) map[string]Flag {
@@ -72,7 +64,6 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 
 	rows, err := cr.ReadAll()
 	if err != nil {
-		log.Print("[goforit] error parsing CSV file:\n", err)
 		return nil, time.Time{}, err
 	}
 
@@ -96,7 +87,6 @@ func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
 	var v JSONFormat
 	err := dec.Decode(&v)
 	if err != nil {
-		log.Print("[goforit] error parsing JSON file:\n", err)
 		return nil, time.Time{}, err
 	}
 	return flagsToMap(v.Flags), time.Unix(int64(v.UpdatedTime), 0), nil

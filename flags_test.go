@@ -58,7 +58,7 @@ type dummyBackend struct {
 	refreshedCount int
 }
 
-func (b *dummyBackend) Refresh(*goforit) (map[string]Flag, time.Time, error) {
+func (b *dummyBackend) Refresh() (map[string]Flag, time.Time, error) {
 	defer func() {
 		b.refreshedCount++
 	}()
@@ -234,7 +234,7 @@ type dummyAgeBackend struct {
 	mtx sync.RWMutex
 }
 
-func (b *dummyAgeBackend) Refresh(*goforit) (map[string]Flag, time.Time, error) {
+func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
 	return map[string]Flag{}, b.t, nil

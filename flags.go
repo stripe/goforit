@@ -111,10 +111,18 @@ func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 // The thunk provided can use a variety of mechanisms for
 // querying the flag values, such as a local file or
 // Consul key/value storage.
-func (g *goforit) RefreshFlags(backend Backend) error {
-	refreshedFlags, age, err := backend.Refresh(g)
+func (g *goforit) RefreshFlags(backend Backend) {
+	// Ask the backend for the flags
+	var checkStatus statsd.ServiceCheckStatus
+	defer func() {
+		g.stats.SimpleServiceCheck("goforit.refreshFlags.present", checkStatus)
+	}()
+	refreshedFlags, age, err := backend.Refresh()
 	if err != nil {
-		return err
+		checkStatus = statsd.Warn
+		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+		log.Printf("[goforit] error refreshing flags: %s", err)
+		return
 	}
 
 	fmap := map[string]Flag{}
@@ -139,7 +147,7 @@ func (g *goforit) RefreshFlags(backend Backend) error {
 	g.lastFlagRefreshTime = time.Now()
 	g.flagsMtx.Unlock()
 
-	return nil
+	return
 }
 
 func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
@@ -154,17 +162,11 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 func (g *goforit) Init(interval time.Duration, backend Backend) *time.Ticker {
 
 	ticker := time.NewTicker(interval)
-	err := RefreshFlags(backend)
-	if err != nil {
-		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
-	}
+	RefreshFlags(backend)
 
 	go func() {
 		for _ = range ticker.C {
-			err := RefreshFlags(backend)
-			if err != nil {
-				g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
-			}
+			RefreshFlags(backend)
 		}
 	}()
 	return ticker
