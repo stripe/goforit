@@ -1,4 +1,4 @@
-package goforit
+package condition
 
 import (
 	"encoding/json"
@@ -7,77 +7,79 @@ import (
 	"math"
 	"reflect"
 	"time"
+
+	"github.com/stripe/goforit"
 )
 
-// ConditionJsonVersion is the supported version of the JSON file format
-const ConditionJsonVersion = 1
+// JsonVersion is the supported version of the JSON file format
+const JsonVersion = 1
 
-// ErrConditionTypeUnknown indicates an unknown condition type seen when decoding
-type ErrConditionTypeUnknown struct {
+// ErrTypeUnknown indicates an unknown condition type seen when decoding
+type ErrTypeUnknown struct {
 	Type string
 }
 
-func (e ErrConditionTypeUnknown) Error() string {
+func (e ErrTypeUnknown) Error() string {
 	return fmt.Sprintf("Unknown condition type %s", e.Type)
 }
 
-// ErrConditionActionUnknown indicates an unknown action seen when decoding
-type ErrConditionActionUnknown struct {
+// ErrActionUnknown indicates an unknown action seen when decoding
+type ErrActionUnknown struct {
 	Action string
 }
 
-func (e ErrConditionActionUnknown) Error() string {
+func (e ErrActionUnknown) Error() string {
 	return fmt.Sprintf("Unknown condition action %s", e.Action)
 }
 
-// ErrConditionJsonVersion indicates a bad version of a condition JSON file
-type ErrConditionJsonVersion struct {
+// ErrVersion indicates a bad version of a condition JSON file
+type ErrVersion struct {
 	Version int
 }
 
-func (e ErrConditionJsonVersion) Error() string {
+func (e ErrVersion) Error() string {
 	return fmt.Sprintf("Unknown condition JSON file version %d", e.Version)
 }
 
-var conditionTypes map[string]Condition = map[string]Condition{}
+var conditionTypes = map[string]Condition{}
 
-// ConditionRegister registers a new type of condition.
+// Register registers a new type of condition.
 // The `template` parameter should be a pointer that implements Condition.
-func ConditionRegister(typeName string, template Condition) {
+func Register(typeName string, template Condition) {
 	if reflect.TypeOf(template).Kind() != reflect.Ptr {
 		panic("Attempt to register non-pointer condition sample")
 	}
 	conditionTypes[typeName] = template
 }
 
-type conditionInfoRaw struct {
-	Type    string          `json:"type"`
-	OnMatch ConditionAction `json:"on_match"`
-	OnMiss  ConditionAction `json:"on_miss"`
+type infoRaw struct {
+	Type    string `json:"type"`
+	OnMatch Action `json:"on_match"`
+	OnMiss  Action `json:"on_miss"`
 }
 
-func (c *conditionInfoRaw) validateActions() error {
+func (c *infoRaw) validateActions() error {
 	// By default, keep trying conditions until one matches
 	if c.OnMatch == "" {
-		c.OnMatch = ConditionFlagEnabled
+		c.OnMatch = ActionFlagEnabled
 	}
 	if c.OnMiss == "" {
-		c.OnMiss = ConditionNext
+		c.OnMiss = ActionNext
 	}
 
-	if _, ok := conditionActions[c.OnMatch]; !ok {
-		return ErrConditionActionUnknown{string(c.OnMatch)}
+	if _, ok := knownActions[c.OnMatch]; !ok {
+		return ErrActionUnknown{string(c.OnMatch)}
 	}
-	if _, ok := conditionActions[c.OnMiss]; !ok {
-		return ErrConditionActionUnknown{string(c.OnMiss)}
+	if _, ok := knownActions[c.OnMiss]; !ok {
+		return ErrActionUnknown{string(c.OnMiss)}
 	}
 	return nil
 }
 
-func (c *ConditionInfo) UnmarshalJSON(buf []byte) error {
+func (c *Info) UnmarshalJSON(buf []byte) error {
 	// Unmarshal the raw condition, to find the type and actions
 	// This is not particularly efficient
-	var raw conditionInfoRaw
+	var raw infoRaw
 	err := json.Unmarshal(buf, &raw)
 	if err != nil {
 		return err
@@ -90,7 +92,7 @@ func (c *ConditionInfo) UnmarshalJSON(buf []byte) error {
 	// Check the type
 	cond, ok := conditionTypes[raw.Type]
 	if !ok {
-		return ErrConditionTypeUnknown{raw.Type}
+		return ErrTypeUnknown{raw.Type}
 	}
 
 	// Make a clone, so we can reuse this value
@@ -105,33 +107,33 @@ func (c *ConditionInfo) UnmarshalJSON(buf []byte) error {
 		return err
 	}
 
-	// Yield a ConditionInfo
+	// Yield a Info
 	c.OnMatch = raw.OnMatch
 	c.OnMiss = raw.OnMiss
 	c.Condition = cond
 	return nil
 }
 
-// ConditionJsonFileFormat is a file format for reading JSON files with condition flags
-type ConditionJsonFileFormat struct{}
+// JsonFileFormat is a file format for reading JSON files with condition flags
+type JsonFileFormat struct{}
 
-type conditionJsonFile struct {
-	Version int             `json:"version"`
-	Updated float64         `json:"updated"`
-	Flags   []ConditionFlag `json:"flags"`
+type jsonFile struct {
+	Version int     `json:"version"`
+	Updated float64 `json:"updated"`
+	Flags   []Flag  `json:"flags"`
 }
 
-func (c *conditionJsonFile) validate() error {
-	if c.Version != ConditionJsonVersion {
-		return ErrConditionJsonVersion{c.Version}
+func (c *jsonFile) validate() error {
+	if c.Version != JsonVersion {
+		return ErrVersion{c.Version}
 	}
 	// TODO: DisallowUnknownFields to detect mispellings, but it's 1.10 only
 	// Extra validation: Do actions make sense? Are any strings empty?
 	return nil
 }
 
-func (ConditionJsonFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
-	var conditionFile conditionJsonFile
+func (JsonFileFormat) Read(r io.Reader) ([]goforit.Flag, time.Time, error) {
+	var conditionFile jsonFile
 	decoder := json.NewDecoder(r)
 	err := decoder.Decode(&conditionFile)
 	if err != nil {
@@ -144,7 +146,7 @@ func (ConditionJsonFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 	}
 
 	// Convert to interface
-	flags := []Flag{}
+	flags := []goforit.Flag{}
 	for i := range conditionFile.Flags {
 		conditionFile.Flags[i].Init()
 		flags = append(flags, &conditionFile.Flags[i])

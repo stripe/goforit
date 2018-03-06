@@ -1,4 +1,4 @@
-package goforit
+package condition
 
 import (
 	"crypto/sha1"
@@ -7,6 +7,8 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+
+	"github.com/stripe/goforit"
 )
 
 // A Condition determines whether a condition is true for a given flag
@@ -18,63 +20,63 @@ type Condition interface {
 	Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error)
 }
 
-// ConditionAction specifies what to do when a condition is executed
-type ConditionAction string
+// Action specifies what to do when a condition is executed
+type Action string
 
 const (
-	// ConditionNextRule indicates that the next condition in sequence should be executed
-	ConditionNext ConditionAction = "next"
-	// ConditionFlagEnabled indicates that the flag should be enabled
-	ConditionFlagEnabled ConditionAction = "enabled"
-	// ConditionFlagDisabled indicates that the flag should be disabled
-	ConditionFlagDisabled ConditionAction = "disabled"
+	// ActionNext indicates that the next condition in sequence should be executed
+	ActionNext Action = "next"
+	// ActionFlagEnabled indicates that the flag should be enabled
+	ActionFlagEnabled Action = "enabled"
+	// ActionFlagDisabled indicates that the flag should be disabled
+	ActionFlagDisabled Action = "disabled"
 )
 
-var conditionActions = map[ConditionAction]bool{
-	ConditionNext:         true,
-	ConditionFlagEnabled:  true,
-	ConditionFlagDisabled: true,
+var knownActions = map[Action]bool{
+	ActionNext:         true,
+	ActionFlagEnabled:  true,
+	ActionFlagDisabled: true,
 }
 
-// ConditionInfo is a condition, plus information about what to do when it is true
-type ConditionInfo struct {
+// Info is a condition, plus information about what to do when it is true
+type Info struct {
 	// Condition is the condition to execute in this step
 	Condition Condition
 	// OnMatch is the action to take if the condition matches
-	OnMatch ConditionAction
+	OnMatch Action
 	// OnMiss is the action to take if the condition does not match
-	OnMiss ConditionAction
+	OnMiss Action
 }
 
-// ConditionFlag is a more complex flag, that applies a list of conditions
-type ConditionFlag struct {
+// Flag is a more complex flag, that applies a list of conditions
+type Flag struct {
 	// FlagName is the name of the given flag
 	FlagName string `json:"name"`
 	// Active is whether or not the flag is active
 	Active bool `json:"active"`
 	// Conditions are the conditions to be applied, in order to check if the flag is enabled
-	Conditions []ConditionInfo `json:"conditions"`
+	Conditions []Info `json:"conditions"`
 }
 
-func (f *ConditionFlag) Name() string {
+func (f *Flag) Name() string {
 	return f.FlagName
 }
 
 // Init gets this flag ready for use
-func (f *ConditionFlag) Init() {
+func (f *Flag) Init() {
 	for _, cond := range f.Conditions {
 		cond.Condition.Init()
 	}
 }
 
-func (f *ConditionFlag) Enabled(rnd *rand.Rand, tags map[string]string) (bool, error) {
+func (f *Flag) Enabled(rnd *rand.Rand, tags map[string]string) (bool, error) {
 	if !f.Active {
 		return false, nil
 	}
 
 	// Try each condition in sequence
 	for _, cond := range f.Conditions {
-		action := ConditionNext
+		action := ActionNext
 		match, err := cond.Condition.Match(rnd, f.Name(), tags)
 		if err != nil {
 			return false, err
@@ -86,9 +88,9 @@ func (f *ConditionFlag) Enabled(rnd *rand.Rand, tags map[string]string) (bool, e
 		} else {
 			action = cond.OnMiss
 		}
-		if action == ConditionFlagEnabled {
+		if action == ActionFlagEnabled {
 			return true, nil
-		} else if action == ConditionFlagDisabled {
+		} else if action == ActionFlagDisabled {
 			return false, nil
 		}
 		// Otherwise, keep going
@@ -98,8 +100,8 @@ func (f *ConditionFlag) Enabled(rnd *rand.Rand, tags map[string]string) (bool, e
 	return false, nil
 }
 
-// ConditionInList is a condition that matches a tag against a list of values
-type ConditionInList struct {
+// InList is a condition that matches a tag against a list of values
+type InList struct {
 	// Tag is the tag to match
 	Tag string `json:"tag"`
 	// Values are the values to match against
@@ -108,23 +110,23 @@ type ConditionInList struct {
 	values map[string]bool
 }
 
-func (c *ConditionInList) Init() {
+func (c *InList) Init() {
 	c.values = map[string]bool{}
 	for _, v := range c.Values {
 		c.values[v] = true
 	}
 }
 
-func (c *ConditionInList) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
+func (c *InList) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
 	value, ok := tags[c.Tag]
 	if !ok {
-		return false, ErrMissingTag{flag, c.Tag}
+		return false, goforit.ErrMissingTag{flag, c.Tag}
 	}
 	return c.values[value], nil
 }
 
-// ConditionSample is a condition that matches at a given rate
-type ConditionSample struct {
+// Sample is a condition that matches at a given rate
+type Sample struct {
 	// Rate is the rate at which to match, from zero to one
 	Rate float64 `json:"rate"`
 	// Tags are the tags to use for matching. The same values of these tags will always result in the same
@@ -132,12 +134,12 @@ type ConditionSample struct {
 	Tags []string `json:"tags"`
 }
 
-func (c *ConditionSample) Init() {
+func (c *Sample) Init() {
 	// Sort the tags
 	sort.Strings(c.Tags)
 }
 
-func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
+func (c *Sample) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
 	// Just a basic random sampling
 	if len(c.Tags) == 0 {
 		return rnd.Float64() < c.Rate, nil
@@ -155,7 +157,7 @@ func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]str
 		hash.Write(zero)
 		v, ok := tags[k]
 		if !ok {
-			return false, ErrMissingTag{flag, k}
+			return false, goforit.ErrMissingTag{flag, k}
 		}
 		io.WriteString(hash, v)
 	}
@@ -169,6 +171,6 @@ func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]str
 }
 
 func init() {
-	ConditionRegister("in_list", &ConditionInList{})
-	ConditionRegister("sample", &ConditionSample{})
+	Register("in_list", &InList{})
+	Register("sample", &Sample{})
 }

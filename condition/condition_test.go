@@ -1,4 +1,4 @@
-package goforit
+package condition
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stripe/goforit"
 )
 
 func TestConditionSample(t *testing.T) {
@@ -17,7 +18,7 @@ func TestConditionSample(t *testing.T) {
 		name := fmt.Sprintf("%d", int(100*rate))
 		t.Run(name, func(t *testing.T) {
 			rnd := rand.New(rand.NewSource(0))
-			cond := &ConditionSample{Rate: rate}
+			cond := &Sample{Rate: rate}
 			cond.Init()
 			count := 0
 			for i := 0; i < int(iters); i++ {
@@ -36,7 +37,7 @@ func TestConditionSampleBy(t *testing.T) {
 	t.Parallel()
 
 	rnd := rand.New(rand.NewSource(0))
-	cond := &ConditionSample{
+	cond := &Sample{
 		Rate: 0.5,
 		Tags: []string{"a", "b"},
 	}
@@ -92,7 +93,7 @@ func TestConditionSampleBy(t *testing.T) {
 	match, err := cond.Match(rnd, "test", tags)
 	assert.False(t, match)
 	assert.Error(t, err)
-	assert.IsType(t, ErrMissingTag{}, err)
+	assert.IsType(t, goforit.ErrMissingTag{}, err)
 }
 
 func TestConditionInList(t *testing.T) {
@@ -112,7 +113,7 @@ func TestConditionInList(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		for i, values := range tagValues {
-			cond := &ConditionInList{Tag: "a", Values: values}
+			cond := &InList{Tag: "a", Values: values}
 			cond.Init()
 			match, err := cond.Match(rnd, "test", map[string]string{"a": tc.Tag, "b": "x"})
 			assert.NoError(t, err)
@@ -121,12 +122,12 @@ func TestConditionInList(t *testing.T) {
 	}
 
 	// If a tag is missing, that's an error
-	cond := &ConditionInList{Tag: "a", Values: []string{}}
+	cond := &InList{Tag: "a", Values: []string{}}
 	tags := map[string]string{"b": "foo"}
 	match, err := cond.Match(rnd, "test", tags)
 	assert.False(t, match)
 	assert.Error(t, err)
-	assert.IsType(t, ErrMissingTag{}, err)
+	assert.IsType(t, goforit.ErrMissingTag{}, err)
 }
 
 func TestConditionFlag(t *testing.T) {
@@ -135,14 +136,14 @@ func TestConditionFlag(t *testing.T) {
 	rnd := rand.New(rand.NewSource(0))
 
 	// Simplest flag ever
-	flag := &ConditionFlag{
+	flag := &Flag{
 		FlagName: "test",
 		Active:   true,
-		Conditions: []ConditionInfo{
+		Conditions: []Info{
 			{
-				OnMatch:   ConditionFlagEnabled,
-				OnMiss:    ConditionFlagDisabled,
-				Condition: &ConditionSample{Rate: 1},
+				OnMatch:   ActionFlagEnabled,
+				OnMiss:    ActionFlagDisabled,
+				Condition: &Sample{Rate: 1},
 			},
 		},
 	}
@@ -152,19 +153,19 @@ func TestConditionFlag(t *testing.T) {
 	assert.True(t, en)
 
 	// Use of Next and whitelists
-	flag = &ConditionFlag{
+	flag = &Flag{
 		FlagName: "test",
 		Active:   true,
-		Conditions: []ConditionInfo{
+		Conditions: []Info{
 			{
-				OnMatch:   ConditionFlagEnabled,
-				OnMiss:    ConditionNext,
-				Condition: &ConditionInList{Tag: "a", Values: []string{"x", "y"}},
+				OnMatch:   ActionFlagEnabled,
+				OnMiss:    ActionNext,
+				Condition: &InList{Tag: "a", Values: []string{"x", "y"}},
 			},
 			{
-				OnMatch:   ConditionFlagEnabled,
-				OnMiss:    ConditionFlagDisabled,
-				Condition: &ConditionInList{Tag: "b", Values: []string{"u", "v"}},
+				OnMatch:   ActionFlagEnabled,
+				OnMiss:    ActionFlagDisabled,
+				Condition: &InList{Tag: "b", Values: []string{"u", "v"}},
 			},
 		},
 	}
@@ -183,14 +184,14 @@ func TestConditionFlag(t *testing.T) {
 	assert.True(t, en)
 	en, err = flag.Enabled(rnd, map[string]string{"a": "FAKE"})
 	assert.Error(t, err)
-	assert.IsType(t, ErrMissingTag{}, err)
+	assert.IsType(t, goforit.ErrMissingTag{}, err)
 	assert.False(t, en)
 
 	// When we get to the end, it's considered disabled
-	flag = &ConditionFlag{
+	flag = &Flag{
 		FlagName:   "test",
 		Active:     true,
-		Conditions: []ConditionInfo{},
+		Conditions: []Info{},
 	}
 	flag.Init()
 	en, err = flag.Enabled(rnd, nil)
@@ -198,15 +199,15 @@ func TestConditionFlag(t *testing.T) {
 	assert.False(t, en)
 
 	// There exist some pretty pointless action combinations, but they still work
-	flag = &ConditionFlag{
+	flag = &Flag{
 		FlagName: "test",
 		Active:   true,
-		Conditions: []ConditionInfo{
+		Conditions: []Info{
 			{
 				// Whatever happens, this is disabled!
-				OnMatch:   ConditionFlagDisabled,
-				OnMiss:    ConditionFlagDisabled,
-				Condition: &ConditionSample{Rate: 1},
+				OnMatch:   ActionFlagDisabled,
+				OnMiss:    ActionFlagDisabled,
+				Condition: &Sample{Rate: 1},
 			},
 		},
 	}
@@ -216,14 +217,14 @@ func TestConditionFlag(t *testing.T) {
 	assert.False(t, en)
 
 	// Inactive flags are never on
-	flag = &ConditionFlag{
+	flag = &Flag{
 		FlagName: "test",
 		Active:   false,
-		Conditions: []ConditionInfo{
+		Conditions: []Info{
 			{
-				OnMatch:   ConditionFlagEnabled,
-				OnMiss:    ConditionFlagDisabled,
-				Condition: &ConditionSample{Rate: 1},
+				OnMatch:   ActionFlagEnabled,
+				OnMiss:    ActionFlagDisabled,
+				Condition: &Sample{Rate: 1},
 			},
 		},
 	}
@@ -233,19 +234,19 @@ func TestConditionFlag(t *testing.T) {
 	assert.False(t, en)
 
 	// Can use randomness
-	flag = &ConditionFlag{
+	flag = &Flag{
 		FlagName: "test",
 		Active:   true,
-		Conditions: []ConditionInfo{
+		Conditions: []Info{
 			{
-				OnMatch:   ConditionNext,
-				OnMiss:    ConditionFlagDisabled,
-				Condition: &ConditionSample{Rate: 0.8},
+				OnMatch:   ActionNext,
+				OnMiss:    ActionFlagDisabled,
+				Condition: &Sample{Rate: 0.8},
 			},
 			{
-				OnMatch:   ConditionFlagEnabled,
-				OnMiss:    ConditionFlagDisabled,
-				Condition: &ConditionSample{Rate: 0.3},
+				OnMatch:   ActionFlagEnabled,
+				OnMiss:    ActionFlagDisabled,
+				Condition: &Sample{Rate: 0.3},
 			},
 		},
 	}

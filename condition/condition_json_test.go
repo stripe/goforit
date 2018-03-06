@@ -1,4 +1,4 @@
-package goforit
+package condition
 
 import (
 	"bytes"
@@ -9,43 +9,44 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stripe/goforit"
 )
 
-func initConditionFlags(fs []Flag) {
+func initConditionFlags(fs []goforit.Flag) {
 	for _, f := range fs {
-		f.(*ConditionFlag).Init()
+		f.(*Flag).Init()
 	}
 }
 
 func TestParseConditionJsonSimple(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join("fixtures", "flags_condition_simple.json")
+	path := filepath.Join("..", "fixtures", "flags_condition_simple.json")
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	defer file.Close()
 
-	flags, lastMod, err := ConditionJsonFileFormat{}.Read(file)
+	flags, lastMod, err := JsonFileFormat{}.Read(file)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1519247256), lastMod.Unix())
 
-	expected := []Flag{
-		&ConditionFlag{
+	expected := []goforit.Flag{
+		&Flag{
 			FlagName: "go.test",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionNext,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionNext,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice"},
 					},
 				},
 				{
-					OnMatch: ConditionFlagDisabled,
-					OnMiss:  ConditionFlagEnabled,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagDisabled,
+					OnMiss:  ActionFlagEnabled,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"bob"},
 					},
@@ -60,218 +61,218 @@ func TestParseConditionJsonSimple(t *testing.T) {
 func TestParseConditionJsonFull(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join("fixtures", "flags_condition_example.json")
+	path := filepath.Join("..", "fixtures", "flags_condition_example.json")
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	defer file.Close()
 
-	flags, lastMod, err := ConditionJsonFileFormat{}.Read(file)
+	flags, lastMod, err := JsonFileFormat{}.Read(file)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1519247256), lastMod.Unix())
 
-	expected := []Flag{
-		&ConditionFlag{
+	expected := []goforit.Flag{
+		&Flag{
 			FlagName: "go.off",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionNext,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionNext,
+					Condition: &Sample{
 						Tags: []string{},
 						Rate: 0,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.on",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{},
 						Rate: 1,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.sample",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{},
 						Rate: 0.1,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.whitelist",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.double_whitelist",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionNext,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionInList{
+					OnMatch: ActionNext,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice"},
 					},
 				},
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &InList{
 						Tag:    "currency",
 						Values: []string{"usd", "cad"},
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.blacklist",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagDisabled,
-					OnMiss:  ConditionFlagEnabled,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagDisabled,
+					OnMiss:  ActionFlagEnabled,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.random_by",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{"server"},
 						Rate: 0.1,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.random_by_multiple",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{"server", "dataset"},
 						Rate: 0.1,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.random_by_with_whitelist",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionNext,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionNext,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
 					},
 				},
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{"request_id"},
 						Rate: 0.1,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.sample_from_whitelist",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionNext,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionInList{
+					OnMatch: ActionNext,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
 					},
 				},
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{"request_id"},
 						Rate: 0.1,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.random_by_with_whitelist_and_blacklist",
 			Active:   true,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionNext,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionNext,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"alice", "bob"},
 					},
 				},
 				{
-					OnMatch: ConditionFlagDisabled,
-					OnMiss:  ConditionNext,
-					Condition: &ConditionInList{
+					OnMatch: ActionFlagDisabled,
+					OnMiss:  ActionNext,
+					Condition: &InList{
 						Tag:    "user",
 						Values: []string{"carol"},
 					},
 				},
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{"request_id"},
 						Rate: 0.2,
 					},
 				},
 			},
 		},
-		&ConditionFlag{
+		&Flag{
 			FlagName: "go.inactive",
 			Active:   false,
-			Conditions: []ConditionInfo{
+			Conditions: []Info{
 				{
-					OnMatch: ConditionFlagEnabled,
-					OnMiss:  ConditionFlagDisabled,
-					Condition: &ConditionSample{
+					OnMatch: ActionFlagEnabled,
+					OnMiss:  ActionFlagDisabled,
+					Condition: &Sample{
 						Tags: []string{},
 						Rate: 0.1,
 					},
@@ -291,7 +292,7 @@ func TestParseConditionJsonErrors(t *testing.T) {
 		Json    string
 	}{
 		{
-			ErrConditionTypeUnknown{}, `{
+			ErrTypeUnknown{}, `{
 				"version": 1,
 				"flags": [
 					{
@@ -307,7 +308,7 @@ func TestParseConditionJsonErrors(t *testing.T) {
 			}`,
 		},
 		{
-			ErrConditionActionUnknown{}, `{
+			ErrActionUnknown{}, `{
 				"version": 1,
 				"flags": [
 					{
@@ -324,7 +325,7 @@ func TestParseConditionJsonErrors(t *testing.T) {
 			}`,
 		},
 		{
-			ErrConditionJsonVersion{}, `{
+			ErrVersion{}, `{
 				"version": 99,
 				"flags": []
 			}`,
@@ -335,7 +336,7 @@ func TestParseConditionJsonErrors(t *testing.T) {
 		name := fmt.Sprintf("%T", tc.ErrType)
 		t.Run(name, func(t *testing.T) {
 			buf := bytes.NewBufferString(tc.Json)
-			flags, lastMod, err := ConditionJsonFileFormat{}.Read(buf)
+			flags, lastMod, err := JsonFileFormat{}.Read(buf)
 			require.Empty(t, flags)
 			require.Zero(t, lastMod)
 			require.Error(t, err)
