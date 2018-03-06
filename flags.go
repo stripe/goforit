@@ -45,6 +45,16 @@ type Flag struct {
 	Rate float64
 }
 
+// New creates a new goforit
+func New() *goforit {
+	stats, _ := statsd.New(statsdAddress)
+	return &goforit{
+		stats:              stats,
+		flags:              map[string]Flag{},
+		stalenessThreshold: defaultStalenessThreshold,
+	}
+}
+
 // Enabled returns a boolean indicating
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified

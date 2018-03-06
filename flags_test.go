@@ -21,7 +21,7 @@ const ε = .02
 
 func Reset() {
 	rand.Seed(seed)
-	initGlobal()
+	globalGoforit = New()
 }
 
 func TestEnabled(t *testing.T) {

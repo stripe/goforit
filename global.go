@@ -3,19 +3,12 @@ package goforit
 import (
 	"context"
 	"time"
-
-	"github.com/DataDog/datadog-go/statsd"
 )
 
-var globalGoforit goforit
-
-func initGlobal() {
-	globalGoforit.stats, _ = statsd.New(statsdAddress)
-	globalGoforit.flags = map[string]Flag{}
-}
+var globalGoforit *goforit
 
 func init() {
-	initGlobal()
+	globalGoforit = New()
 }
 
 func Enabled(ctx context.Context, name string) (enabled bool) {
