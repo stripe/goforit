@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "updated": 1519247256.0626957,
+  "flags": [
+    {
+      "name": "go.test",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice"],
+          "on_match": "enabled",
+          "on_miss": "next"
+        },
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["bob"],
+          "on_match": "disabled",
+          "on_miss": "enabled"
+        }
+      ]
+    }
+  ]
+}

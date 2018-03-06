@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "updated": 1519247256.0626957,
+  "flags": [
+    {
+      "name": "go.off",
+      "active": true,
+      "conditions": [
+        {
+          "type": "sample",
+          "rate": 0,
+          "tags": [],
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.on",
+      "active": true,
+      "conditions": [
+        {
+          "type": "sample",
+          "rate": 1,
+          "tags": [],
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.sample",
+      "active": true,
+      "conditions": [
+        {
+          "type": "sample",
+          "rate": 0.1,
+          "tags": [],
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.whitelist",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice", "bob"],
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.double_whitelist",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice"],
+          "on_match": "next",
+          "on_miss": "disabled"
+        },
+        {
+          "type": "in_list",
+          "tag": "currency",
+          "values": ["usd", "cad"],
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.blacklist",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice", "bob"],
+          "on_match": "disabled",
+          "on_miss": "enabled"
+        }
+      ]
+    },
+    {
+      "name": "go.random_by",
+      "active": true,
+      "conditions": [
+        {
+          "type": "sample",
+          "tags": ["server"],
+          "rate": 0.1,
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.random_by_multiple",
+      "active": true,
+      "conditions": [
+        {
+          "type": "sample",
+          "tags": ["server", "dataset"],
+          "rate": 0.1,
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.random_by_with_whitelist",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice", "bob"],
+          "on_match": "enabled",
+          "on_miss": "next"
+        },
+        {
+          "type": "sample",
+          "tag": ["request_id"],
+          "rate": 0.1,
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.sample_from_whitelist",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice", "bob"],
+          "on_match": "next",
+          "on_miss": "disabled"
+        },
+        {
+          "type": "sample",
+          "tag": ["request_id"],
+          "rate": 0.1,
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.random_by_with_whitelist_and_blacklist",
+      "active": true,
+      "conditions": [
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["alice", "bob"],
+          "on_match": "enabled",
+          "on_miss": "next"
+        },
+        {
+          "type": "in_list",
+          "tag": "user",
+          "values": ["carol"],
+          "on_match": "disabled",
+          "on_miss": "next"
+        },
+        {
+          "type": "sample",
+          "tag": ["request_id"],
+          "rate": 0.2,
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    },
+    {
+      "name": "go.inactive",
+      "active": false,
+      "conditions": [
+        {
+          "type": "sample",
+          "rate": 0.1,
+          "tags": [],
+          "on_match": "enabled",
+          "on_miss": "disabled"
+        }
+      ]
+    }
+  ]
+}
