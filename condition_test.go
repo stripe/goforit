@@ -18,6 +18,7 @@ func TestConditionSample(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rnd := rand.New(rand.NewSource(0))
 			cond := &ConditionSample{Rate: rate}
+			cond.Init()
 			count := 0
 			for i := 0; i < int(iters); i++ {
 				match, err := cond.Match(rnd, "test", nil)
@@ -34,15 +35,12 @@ func TestConditionSample(t *testing.T) {
 func TestConditionSampleBy(t *testing.T) {
 	t.Parallel()
 
-	// can have multiple values
-	// flag name matters
-	// errors possible
-
 	rnd := rand.New(rand.NewSource(0))
 	cond := &ConditionSample{
 		Rate: 0.5,
 		Tags: []string{"a", "b"},
 	}
+	cond.Init()
 
 	// Generate results for a bunch of tags
 	type resultKey struct{ a, b int }
@@ -68,7 +66,7 @@ func TestConditionSampleBy(t *testing.T) {
 	// Verify that the same listed tags yield the same results, even later on
 	for a := 0; a < 100; a++ {
 		for b := 0; b < 100; b++ {
-			tags := map[string]string{"a": string(a), "b": string(b), "c": "b"}
+			tags := map[string]string{"b": string(b), "a": string(a), "c": "b"}
 			match, err := cond.Match(rnd, "test", tags)
 			assert.NoError(t, err)
 			assert.Equal(t, results[resultKey{a, b}], match)
@@ -97,10 +95,40 @@ func TestConditionSampleBy(t *testing.T) {
 	assert.IsType(t, ErrMissingTag{}, err)
 }
 
-// sample-by + consistency
-// in-list
+func TestConditionInList(t *testing.T) {
+	t.Parallel()
 
+	rnd := rand.New(rand.NewSource(0))
+
+	tagValues := [][]string{{}, {"x"}, {"x", "y"}, {"x", "y", "z"}}
+	testCases := []struct {
+		Tag     string
+		Results []bool
+	}{
+		{"x", []bool{false, true, true, true}},
+		{"y", []bool{false, false, true, true}},
+		{"z", []bool{false, false, false, true}},
+		{"o", []bool{false, false, false, false}},
+	}
+	for _, tc := range testCases {
+		for i, values := range tagValues {
+			cond := &ConditionInList{Tag: "a", Values: values}
+			cond.Init()
+			match, err := cond.Match(rnd, "test", map[string]string{"a": tc.Tag, "b": "x"})
+			assert.NoError(t, err)
+			assert.Equal(t, tc.Results[i], match)
+		}
+	}
+
+	// If a tag is missing, that's an error
+	cond := &ConditionInList{Tag: "a", Values: []string{}}
+	tags := map[string]string{"b": "foo"}
+	match, err := cond.Match(rnd, "test", tags)
+	assert.False(t, match)
+	assert.Error(t, err)
+	assert.IsType(t, ErrMissingTag{}, err)
+}
+
+// TODO
 // multiple conditions in a flag
 // default actions
-
-// errors: missing tags

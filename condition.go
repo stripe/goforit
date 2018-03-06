@@ -11,6 +11,10 @@ import (
 
 // A Condition determines whether a condition is true for a given flag
 type Condition interface {
+	// Init allows this condition to do any initialization it needs
+	Init()
+
+	// Match matches the flag and tags against this condition
 	Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error)
 }
 
@@ -66,10 +70,23 @@ type ConditionInList struct {
 	Tag string `json:"tag"`
 	// Values are the values to match against
 	Values []string `json:"values"`
+
+	values map[string]bool
+}
+
+func (c *ConditionInList) Init() {
+	c.values = map[string]bool{}
+	for _, v := range c.Values {
+		c.values[v] = true
+	}
 }
 
 func (c *ConditionInList) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
-	panic("implement me") // TODO
+	value, ok := tags[c.Tag]
+	if !ok {
+		return false, ErrMissingTag{flag, c.Tag}
+	}
+	return c.values[value], nil
 }
 
 // ConditionSample is a condition that matches at a given rate
@@ -79,6 +96,11 @@ type ConditionSample struct {
 	// Tags are the tags to use for matching. The same values of these tags will always result in the same
 	// result.
 	Tags []string `json:"tags"`
+}
+
+func (c *ConditionSample) Init() {
+	// Sort the tags
+	sort.Strings(c.Tags)
 }
 
 func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
@@ -92,13 +114,8 @@ func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]str
 	io.WriteString(hash, flag)
 
 	// Add tags to our hash, in order
-	keys := []string{}
-	for _, k := range c.Tags {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	zero := []byte{0} // nil-separate everything
-	for _, k := range keys {
+	for _, k := range c.Tags {
 		hash.Write(zero)
 		io.WriteString(hash, k)
 		hash.Write(zero)

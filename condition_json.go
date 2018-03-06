@@ -146,6 +146,9 @@ func (ConditionJsonFileFormat) Read(r io.Reader) ([]Flag, time.Time, error) {
 	// Convert to interface
 	flags := []Flag{}
 	for i := range conditionFile.Flags {
+		for _, cond := range conditionFile.Flags[i].Conditions {
+			cond.Condition.Init()
+		}
 		flags = append(flags, &conditionFile.Flags[i])
 	}
 
