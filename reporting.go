@@ -47,10 +47,11 @@ func (e ErrInvalidTagList) Error() string {
 	return fmt.Sprintf("Invalid tag list: %s", e.Message)
 }
 
+// ErrMissingTag indicates that the client didn't provide a required tag for this flag
 // TODO: We don't actually use this yet
-type ErrBadTags struct {
-	flag string
-	tag  string
+type ErrMissingTag struct {
+	Flag string
+	Tag  string
 }
 
 // AgeType is a type of age that could be reported.

@@ -75,6 +75,11 @@ type ConditionSample struct {
 }
 
 func (c *ConditionSample) Match(rnd *rand.Rand, flag string, tags map[string]string) (bool, error) {
+	// Just a basic random sampling
+	if len(c.Tags) == 0 {
+		return rnd.Float64() < c.Rate, nil
+	}
+
 	panic("implement me") // TODO
 }
 

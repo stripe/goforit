@@ -335,6 +335,3 @@ func TestParseConditionJsonErrors(t *testing.T) {
 		})
 	}
 }
-
-// Condition types
-// Overall flag algorithm
