@@ -33,6 +33,11 @@ var stats statsdClient
 var stalenessThreshold time.Duration = 5 * time.Minute
 var stalenessMtx = sync.RWMutex{}
 
+var flags = map[string]Flag{}
+var flagsMtx = sync.RWMutex{}
+var lastFlagRefreshTime time.Time
+var lastAssert time.Time
+
 func init() {
 	stats, _ = statsd.New(statsdAddress)
 }
@@ -85,12 +90,6 @@ type JSONFormat struct {
 	Flags       []Flag  `json:"flags"`
 	UpdatedTime float64 `json:"updated"`
 }
-
-var flags = map[string]Flag{}
-var flagsMtx = sync.RWMutex{}
-
-var lastFlagRefreshTime time.Time
-var lastAssert time.Time
 
 // Enabled returns a boolean indicating
 // whether or not the flag should be considered
