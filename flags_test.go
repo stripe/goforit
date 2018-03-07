@@ -1,19 +1,20 @@
 package goforit
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
-	"io/ioutil"
+	"log"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // arbitrary but fixed for reproducible testing
@@ -21,145 +22,88 @@ const seed = 5194304667978865136
 
 const ε = .02
 
-func Reset() {
-	flags = map[string]Flag{}
-	flagsMtx = sync.RWMutex{}
-	stats, _ = statsd.New(statsdAddress)
+type mockStatsd struct {
+	lock            sync.RWMutex
+	histogramValues map[string][]float64
 }
 
-func TestParseFlagsCSV(t *testing.T) {
-	filename := filepath.Join("fixtures", "flags_example.csv")
-
-	type testcase struct {
-		Name     string
-		Filename string
-		Expected []Flag
-	}
-
-	cases := []testcase{
-		{
-			Name:     "BasicExample",
-			Filename: filepath.Join("fixtures", "flags_example.csv"),
-			Expected: []Flag{
-				{
-					"go.sun.money",
-					false,
-					[]Rule{},
-				},
-				{
-					"go.moon.mercury",
-					true,
-					[]Rule{},
-				},
-				{
-					"go.stars.money",
-					true,
-					[]Rule{
-						RateRule{
-							Rate:    0.5,
-							OnMatch: "on",
-							OnMiss:  "off",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.Name, func(t *testing.T) {
-			f, err := os.Open(filename)
-			assert.NoError(t, err)
-			defer f.Close()
-
-			flags, _, err := parseFlagsCSV(f)
-
-			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
-		})
-	}
+func (m *mockStatsd) Gauge(string, float64, []string, float64) error {
+	return nil
 }
 
-func TestParseFlagsJSON(t *testing.T) {
-	filename := filepath.Join("fixtures", "flags_example.json")
-
-	type testcase struct {
-		Name     string
-		Filename string
-		Expected []Flag
-	}
-
-	cases := []testcase{
-		{
-			Name:     "BasicExample",
-			Filename: filepath.Join("fixtures", "flags_example.json"),
-			Expected: []Flag{
-				{
-					"go.sun.moon",
-					true,
-					[]Rule{
-						MatchListRule{
-							"host_name",
-							[]string{"apibox_123", "apibox_456"},
-							"off",
-							"continue",
-						},
-						MatchListRule{
-							"host_name",
-							[]string{"apibox_789"},
-							"on",
-							"continue",
-						},
-						RateRule{
-							0.01,
-							[]string{"cluster", "db"},
-							"on",
-							"off",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.Name, func(t *testing.T) {
-			f, err := os.Open(filename)
-			assert.NoError(t, err)
-			defer f.Close()
-
-			flags, _, err := parseFlagsJSON(f)
-
-			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
-		})
-	}
+func (m *mockStatsd) Count(string, int64, []string, float64) error {
+	return nil
 }
 
-// should check there is no error
-//func checkEnabled(t *testing.T, ctx context.Context, flag string) bool {
-func checkEnabled(ctx context.Context, flag string) bool {
-	ret, _ := Enabled(ctx, flag, nil)
-	// assert.Nil(t, err)
-	return ret
+func (m *mockStatsd) SimpleServiceCheck(string, statsd.ServiceCheckStatus) error {
+	return nil
+}
+
+func (m *mockStatsd) Histogram(name string, value float64, tags []string, rate float64) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if m.histogramValues == nil {
+		m.histogramValues = make(map[string][]float64)
+	}
+	m.histogramValues[name] = append(m.histogramValues[name], value)
+	return nil
+}
+
+func (m *mockStatsd) getHistogramValues(name string) []float64 {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	s := make([]float64, len(m.histogramValues[name]))
+	copy(s, m.histogramValues[name])
+	return s
+}
+
+// Build a goforit for testing
+// Also return the log output
+func testGoforit(interval time.Duration, backend Backend) (*goforit, *bytes.Buffer) {
+	g := newWithoutInit()
+	g.rnd = rand.New(rand.NewSource(seed))
+	var buf bytes.Buffer
+	g.logger = log.New(&buf, "", 9)
+	g.stats = &mockStatsd{}
+
+	if backend != nil {
+		g.init(interval, backend)
+	}
+
+	return g, &buf
+}
+
+func TestGlobal(t *testing.T) {
+	// Not parallel, testing global behavior
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	globalGoforit.stats = &mockStatsd{} // prevent logging real metrics
+
+	Init(DefaultInterval, backend)
+	defer Close()
+
+	assert.False(t, Enabled(nil, "go.sun.money", nil))
+	assert.True(t, Enabled(nil, "go.moon.mercury", nil))
 }
 
 func TestEnabled(t *testing.T) {
+	t.Parallel()
+
 	const iterations = 100000
 
-	Reset()
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker := Init(DefaultInterval, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(DefaultInterval, backend)
+	defer g.Close()
 
-	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
-	assert.True(t, checkEnabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 
 	// nil is equivalent to empty context
-	assert.False(t, checkEnabled(nil, "go.sun.money"))
-	assert.True(t, checkEnabled(nil, "go.moon.mercury"))
+	assert.False(t, g.Enabled(nil, "go.sun.money", nil))
+	assert.True(t, g.Enabled(nil, "go.moon.mercury", nil))
 
 	count := 0
 	for i := 0; i < iterations; i++ {
-		if checkEnabled(context.Background(), "go.stars.money") {
+		if g.Enabled(context.Background(), "go.stars.money", nil) {
 			count++
 		}
 	}
@@ -194,14 +138,15 @@ func (b *dummyBackend) Refresh() (map[string]Flag, time.Time, error) {
 }
 
 func TestRefresh(t *testing.T) {
-	Reset()
+	t.Parallel()
+
 	backend := &dummyBackend{}
+	g, _ := testGoforit(10*time.Millisecond, backend)
 
-	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
-	assert.False(t, checkEnabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 
-	ticker := Init(10*time.Millisecond, backend)
-	defer ticker.Stop()
+	defer g.Close()
 
 	// ensure refresh runs twice to avoid race conditions
 	// in which the Refresh method returns but the assertions get called
@@ -210,34 +155,20 @@ func TestRefresh(t *testing.T) {
 		<-time.After(10 * time.Millisecond)
 	}
 
-	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
-	assert.True(t, checkEnabled(context.Background(), "go.moon.mercury"))
-}
-
-func TestMultipleDefinitions(t *testing.T) {
-	const repeatedFlag = "go.sun.money"
-	const lastValue = 0.7
-	Reset()
-
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
-	RefreshFlags(backend)
-
-	flag := flags[repeatedFlag]
-	assert.Equal(t, flag, Flag{repeatedFlag, true, []Rule{RateRule{Rate: lastValue, OnMatch: "on", OnMiss: "off"}}})
-
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 }
 
 // BenchmarkEnabled runs a benchmark for a feature flag
 // that is enabled for 50% of operations.
 func BenchmarkEnabled(b *testing.B) {
-	Reset()
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker := Init(DefaultInterval, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = checkEnabled(context.Background(), "go.stars.money")
+		_ = g.Enabled(context.Background(), "go.stars.money", nil)
 	}
 }
 
@@ -252,120 +183,87 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 }
 
 func TestOverride(t *testing.T) {
-	Reset()
+	t.Parallel()
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	ticker := Init(DefaultInterval, backend)
-	defer ticker.Stop()
-	RefreshFlags(backend)
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
+	g.RefreshFlags(backend)
 
 	// Empty context gets values from backend.
-	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
-	assert.True(t, checkEnabled(context.Background(), "go.moon.mercury"))
-	assert.False(t, checkEnabled(context.Background(), "go.extra"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(context.Background(), "go.extra", nil))
 
 	// Nil is equivalent to empty context.
-	assert.False(t, checkEnabled(nil, "go.sun.money"))
-	assert.True(t, checkEnabled(nil, "go.moon.mercury"))
-	assert.False(t, checkEnabled(nil, "go.extra"))
+	assert.False(t, g.Enabled(nil, "go.sun.money", nil))
+	assert.True(t, g.Enabled(nil, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(nil, "go.extra", nil))
 
 	// Can override to true in context.
 	ctx := context.Background()
 	ctx = Override(ctx, "go.sun.money", true)
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.True(t, checkEnabled(ctx, "go.moon.mercury"))
-	assert.False(t, checkEnabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.True(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Can override to false.
 	ctx = Override(ctx, "go.moon.mercury", false)
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
-	assert.False(t, checkEnabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Can override brand new flag.
 	ctx = Override(ctx, "go.extra", true)
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
-	assert.True(t, checkEnabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.True(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Can override an override.
 	ctx = Override(ctx, "go.extra", false)
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
-	assert.False(t, checkEnabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Separate contexts don't interfere with each other.
 	// This allows parallel tests that use feature flags.
 	ctx2 := Override(context.Background(), "go.extra", true)
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
-	assert.False(t, checkEnabled(ctx, "go.extra"))
-	assert.False(t, checkEnabled(ctx2, "go.sun.money"))
-	assert.True(t, checkEnabled(ctx2, "go.moon.mercury"))
-	assert.True(t, checkEnabled(ctx2, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
+	assert.False(t, g.Enabled(ctx2, "go.sun.money", nil))
+	assert.True(t, g.Enabled(ctx2, "go.moon.mercury", nil))
+	assert.True(t, g.Enabled(ctx2, "go.extra", nil))
 
 	// Overrides apply to child contexts.
 	child := context.WithValue(ctx, "foo", "bar")
-	assert.True(t, checkEnabled(child, "go.sun.money"))
-	assert.False(t, checkEnabled(child, "go.moon.mercury"))
-	assert.False(t, checkEnabled(child, "go.extra"))
+	assert.True(t, g.Enabled(child, "go.sun.money", nil))
+	assert.False(t, g.Enabled(child, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(child, "go.extra", nil))
 
 	// Changes to child contexts don't affect parents.
 	child = Override(child, "go.moon.mercury", true)
-	assert.True(t, checkEnabled(child, "go.sun.money"))
-	assert.True(t, checkEnabled(child, "go.moon.mercury"))
-	assert.False(t, checkEnabled(child, "go.extra"))
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
-	assert.False(t, checkEnabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(child, "go.sun.money", nil))
+	assert.True(t, g.Enabled(child, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(child, "go.extra", nil))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 }
 
 func TestOverrideWithoutInit(t *testing.T) {
-	Reset()
+	t.Parallel()
+
+	g, _ := testGoforit(0, nil)
 
 	// Everything is false by default.
-	assert.False(t, checkEnabled(context.Background(), "go.sun.money"))
-	assert.False(t, checkEnabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 
 	// Can override.
 	ctx := Override(context.Background(), "go.sun.money", true)
-	assert.True(t, checkEnabled(ctx, "go.sun.money"))
-	assert.False(t, checkEnabled(ctx, "go.moon.mercury"))
-}
-
-type mockHistogramClient struct {
-	*statsd.Client
-	targetName      string
-	histogramValues []float64
-	lock            sync.RWMutex
-}
-
-func (m *mockHistogramClient) Histogram(name string, value float64, tags []string, rate float64) error {
-	if m.targetName == name {
-		m.lock.Lock()
-		defer m.lock.Unlock()
-		m.histogramValues = append(m.histogramValues, value)
-	}
-	return nil
-}
-
-func writeMockJSONFile(t *testing.T, path string, updatedPeriod time.Duration) {
-	flags := []FlagJSONFormat{{"go.sun.money", true, []json.RawMessage{}}}
-	updatedTime := time.Now().Add(updatedPeriod)
-	flagsJson := &JSONFormat{flags, float64(updatedTime.Unix())}
-
-	jsonData, err := json.Marshal(flagsJson)
-	require.NoError(t, err)
-
-	tmp, err := ioutil.TempFile(filepath.Dir(path), "flags-temp-")
-	require.NoError(t, err)
-	defer os.Remove(tmp.Name())
-	_, err = tmp.Write(jsonData)
-	require.NoError(t, err)
-	tmp.Close()
-
-	err = os.Rename(tmp.Name(), path)
-	require.NoError(t, err)
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
 }
 
 type dummyAgeBackend struct {
@@ -381,13 +279,11 @@ func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
 
 // Test to see proper monitoring of age of the flags dump
 func TestCacheFileMetric(t *testing.T) {
-	Reset()
-	mockStats := &mockHistogramClient{stats.(*statsd.Client), "goforit.flags.cache_file_age_s", []float64{}, sync.RWMutex{}}
-	stats = mockStats
+	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	ticker := Init(10*time.Millisecond, backend)
-	defer ticker.Stop()
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 
 	time.Sleep(50 * time.Millisecond)
 	func() {
@@ -397,14 +293,11 @@ func TestCacheFileMetric(t *testing.T) {
 	}()
 	time.Sleep(50 * time.Millisecond)
 
-	mockStats.lock.RLock()
-	defer mockStats.lock.RUnlock()
-
 	// We expect something like: [600, 600.01, ..., 0.0, 0.01, ...]
 	last := math.Inf(-1)
 	old := 0
 	recent := 0
-	for _, v := range mockStats.histogramValues {
+	for _, v := range g.stats.(*mockStatsd).getHistogramValues("goforit.flags.cache_file_age_s") {
 		if v > 300 {
 			// Should be older than last time
 			assert.True(t, v > last)
@@ -429,34 +322,29 @@ func TestCacheFileMetric(t *testing.T) {
 
 // Test to see proper monitoring of refreshing the flags dump file from disc
 func TestRefreshCycleMetric(t *testing.T) {
-	Reset()
-	mockStats := &mockHistogramClient{stats.(*statsd.Client), "goforit.flags.last_refresh_s", []float64{}, sync.RWMutex{}}
-	stats = mockStats
-	ctx := context.Background()
+	t.Parallel()
 
-	backend := &dummyBackend{}
-	ticker := Init(10*time.Millisecond, backend)
-	defer ticker.Stop()
+	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
 
 	for i := 0; i < 10; i++ {
-		checkEnabled(ctx, "go.sun.money")
+		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
 
 	// want to stop ticker to simulate Refresh() hanging
-	ticker.Stop()
+	g.Close()
 
 	for i := 0; i < 10; i++ {
-		checkEnabled(ctx, "go.sun.money")
+		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
 
-	mockStats.lock.RLock()
-	defer mockStats.lock.RUnlock()
-
+	values := g.stats.(*mockStatsd).getHistogramValues("goforit.flags.last_refresh_s")
 	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
 	for i := 0; i < 10; i++ {
-		v := mockStats.histogramValues[i]
+		v := values[i]
 		// Should be ~< 10ms
 		assert.InDelta(t, 0.005, v, 0.010)
 	}
@@ -464,7 +352,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	last := math.Inf(-1)
 	large := 0
 	for i := 10; i < 20; i++ {
-		v := mockStats.histogramValues[i]
+		v := values[i]
 		assert.True(t, v > last)
 		last = v
 		if v > 0.012 {
@@ -472,4 +360,58 @@ func TestRefreshCycleMetric(t *testing.T) {
 		}
 	}
 	assert.True(t, large > 2)
+}
+
+func TestStaleFile(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
+	g, buf := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
+	g.SetStalenessThreshold(10*time.Minute + 42*time.Second)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Should see staleness warnings for backend
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.True(t, len(lines) > 2)
+	for _, line := range lines {
+		assert.Contains(t, line, "10m42")
+		assert.Contains(t, line, "Backend")
+	}
+}
+
+func TestNoStaleFile(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
+	g, buf := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Never set staleness, so no warnings
+	assert.Zero(t, buf.String())
+}
+
+func TestStaleRefresh(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyBackend{}
+	g, buf := testGoforit(10*time.Millisecond, backend)
+	g.SetStalenessThreshold(50 * time.Millisecond)
+
+	// Simulate stopping refresh
+	g.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	for i := 0; i < 10; i++ {
+		g.Enabled(nil, "go.sun.money", nil)
+	}
+
+	// Should see just one staleness warning
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.Equal(t, 1, len(lines))
+	assert.Contains(t, lines[0], "Refresh")
+	assert.Contains(t, lines[0], "50ms")
 }
