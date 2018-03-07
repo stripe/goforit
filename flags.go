@@ -84,37 +84,51 @@ func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
 type Flag struct {
 	Name   string
 	Active bool
-	Rules  []Rule
+	Rules  []RuleInfo
+}
+
+type RuleAction string
+
+const (
+	RuleOn RuleAction = "on"
+	RuleOff RuleAction = "off"
+	RuleContinue RuleAction = "continue"
+)
+
+var validRuleActions = map[RuleAction]bool {
+	RuleOn: true,
+	RuleOff: true,
+	RuleContinue: true,
+}
+
+type RuleInfo struct {
+	Rule Rule
+	OnMatch  RuleAction
+	OnMiss   RuleAction
+}
+
+type ruleInfoJson struct {
+	Type string `json:"type"`
+	OnMatch  RuleAction `json:"on_match"`
+	OnMiss   RuleAction `json:"on_miss"`
 }
 
 type Rule interface {
-	Handle(ctx context.Context, props map[string]string) bool
-	onMatch() string
-	onMiss() string
+	Handle(ctx context.Context, props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
 	Property string
 	Values   []string
-	OnMatch  string `json:"on_match"`
-	OnMiss   string `json:"on_miss"`
 }
 
 type RateRule struct {
 	Rate       float64
 	Properties []string
-	OnMatch    string `json:"on_match"`
-	OnMiss     string `json:"on_miss"`
-}
-
-type FlagJSONFormat struct {
-	Name   string
-	Active bool
-	Rules  []json.RawMessage
 }
 
 type JSONFormat struct {
-	Flags       []FlagJSONFormat `json:"flags"`
+	Flags       []Flag `json:"flags"`
 	UpdatedTime float64          `json:"updated"`
 }
 
@@ -128,8 +142,8 @@ var lastAssert time.Time
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool, err error) {
-	err = nil
+func Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
+
 	defer func() {
 		var gauge float64
 		if enabled {
@@ -163,7 +177,7 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 	defer flagsMtx.RUnlock()
 	enabled = false
 	if flags == nil {
-		err = errors.New("empty flags map")
+		log.Printf("[goforit] empty flags map")
 		return
 	}
 	flag := flags[name]
@@ -172,12 +186,16 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 	}
 	for _, r := range flag.Rules {
 
-		res := r.Handle(ctx, properties)
-		var matchBehavior string
+		res, err := r.Rule.Handle(ctx, properties)
+		if err != nil {
+			log.Printf("[goforit] error evaluating rule:\n", err)
+			return
+		}
+		var matchBehavior RuleAction
 		if res {
-			matchBehavior = r.onMatch()
+			matchBehavior = r.OnMatch
 		} else {
-			matchBehavior = r.onMiss()
+			matchBehavior = r.OnMiss
 		}
 		switch matchBehavior {
 		case "on":
@@ -186,28 +204,63 @@ func Enabled(ctx context.Context, name string, properties map[string]string) (en
 		case "off":
 			enabled = false
 			return
-		case "match_list":
+		case "continue":
 			continue
 		default:
-			err = errors.New("unknown match behavior: " + matchBehavior)
+			log.Printf("[goforit] unknown match behavior: " + string(matchBehavior))
 			return
 		}
 	}
-	enabled = true
+	enabled = false
 	return
 }
 
-func getProperty(ctx context.Context, props map[string]string, prop string) string {
+func (ri *RuleInfo) UnmarshalJSON(buf []byte) error {
+	var raw ruleInfoJson
+	err := json.Unmarshal(buf, &raw)
+	if err != nil {
+		return err
+	}
+
+	// Validate actions
+	if !validRuleActions[raw.OnMatch] {
+		return errors.New("Bad action") // TODO: make a custom error type
+	}
+	if !validRuleActions[raw.OnMiss] {
+		return errors.New("Bad action") // TODO: make a custom error type
+	}
+	ri.OnMatch = raw.OnMatch
+	ri.OnMiss = raw.OnMiss
+
+	// Handle the type
+	switch raw.Type {
+	case "match_list": // TODO: constant
+		ri.Rule = &MatchListRule{}
+	case "sample": // TODO: constant
+		ri.Rule = &RateRule{}
+	default:
+		return errors.New("Bad type") // TODO: custom error type
+ 	}
+
+	return json.Unmarshal(buf, ri.Rule)
+}
+//
+// func (g *goforit) Enabled(ctx, name, tags) bool {
+// 	tags = mergeTags(tags, g.defaultTags)
+// 	...
+// }
+
+func getProperty(ctx context.Context, props map[string]string, prop string) (string, error) {
 	if v, ok := props[prop]; ok {
-		return v
-	} else if v, ok := ctx.Value(overrideContextKey).(string); ok {
-		return v
+		return v, nil
+	} else if v, ok := ctx.Value(prop).(string); ok {
+		return v, nil
 	} else {
-		return ""
+		return "", errors.New("No property " + prop + " in properties map or context.")
 	}
 }
 
-func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
+func (r *RateRule) Handle(ctx context.Context, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
@@ -215,7 +268,11 @@ func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
 		sort.Strings(r.Properties)
 		var buffer bytes.Buffer
 		for _, val := range r.Properties {
-			buffer.WriteString(getProperty(ctx, props, val))
+			prop, err := getProperty(ctx, props, val)
+			if err != nil {
+				return false, err
+			}
+			buffer.WriteString(prop)
 		}
 		h.Write([]byte(buffer.String()))
 		bs := h.Sum(nil)
@@ -224,41 +281,24 @@ func (r RateRule) Handle(ctx context.Context, props map[string]string) bool {
 		x, _ := strconv.ParseUint(encodedStr[0:4], 16, 16)
 		// check to see if the 16 most significant bits of the hex
 		// is less than (rate * 2^16)
-		return float64(x) < (r.Rate * float64(1<<16))
+		return float64(x) < (r.Rate * float64(1<<16)), nil
 	} else {
 		f := rand.Float64()
-		return f < r.Rate
+		return f < r.Rate, nil
 	}
 }
 
-func (r MatchListRule) Handle(ctx context.Context, props map[string]string) bool {
-	prop := getProperty(ctx, props, r.Property)
+func (r *MatchListRule) Handle(ctx context.Context, props map[string]string) (bool, error) {
+	prop, err := getProperty(ctx, props, r.Property)
+	if err != nil {
+		return false, err
+	}
 	for _, val := range r.Values {
 		if val == prop {
-			return true
+			return true, nil
 		}
 	}
-	return false
-}
-
-// getter for the match behavior
-func (b RateRule) onMatch() string {
-	return b.OnMatch
-}
-
-// getter for the miss behavior
-func (b RateRule) onMiss() string {
-	return b.OnMiss
-}
-
-// getter for the match behavior
-func (b MatchListRule) onMatch() string {
-	return b.OnMatch
-}
-
-// getter for the miss behavior
-func (b MatchListRule) onMiss() string {
-	return b.OnMiss
+	return false, nil
 }
 
 func flagsToMap(flags []Flag) map[string]Flag {
@@ -293,11 +333,15 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 			rate = 0
 		}
 		var active = false
-		var rules = []Rule{}
+		var rules = []RuleInfo{}
 		if rate > 0 {
 			active = true
 			if rate < 1 {
-				rules = append(rules, RateRule{Rate: rate, OnMatch: "on", OnMiss: "off"})
+				rules = append(rules, RuleInfo{
+					OnMatch: RuleOn,
+					OnMiss: RuleOff,
+					Rule: &RateRule{Rate: rate},
+				})
 			}
 		}
 		flags[name] = Flag{Name: name, Active: active, Rules: rules}
@@ -310,51 +354,9 @@ func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
 	var v JSONFormat
 	err := dec.Decode(&v)
 	if err != nil {
-		log.Print("[goforit] error parsing JSON file:\n", err)
 		return nil, time.Time{}, err
 	}
-	// we first unmarshall into the intermediate FlagJSONFormat
-	// then do another pass to parse the different rule types per flag
-	flags := make([]Flag, len(v.Flags))
-	for i, flag := range v.Flags {
-		rules := make([]Rule, len(flag.Rules))
-		for i2, r := range flag.Rules {
-
-			// first extract the rule type
-			var obj map[string]interface{}
-			err = json.Unmarshal(r, &obj)
-			if err != nil {
-				return nil, time.Time{}, err
-			}
-
-			ruleType := ""
-			if t, ok := obj["type"].(string); ok {
-				ruleType = t
-			} else {
-				return nil, time.Time{}, errors.New("Malformed json. Missing rule type.")
-			}
-
-			// unmarshal again into the correct rule struct now that we know the type
-			var actual Rule
-			switch ruleType {
-			case "sample":
-				actual = &RateRule{}
-			case "match_list":
-				actual = &MatchListRule{}
-			default:
-				return nil, time.Time{}, errors.New("Malformed json. Unknown rule type: " + ruleType)
-			}
-
-			err = json.Unmarshal(r, actual)
-			if err != nil {
-				return nil, time.Time{}, err
-			}
-
-			rules[i2] = actual
-			flags[i] = Flag{Name: flag.Name, Active: flag.Active, Rules: rules}
-		}
-	}
-	return flagsToMap(flags), time.Unix(int64(v.UpdatedTime), 0), nil
+	return flagsToMap(v.Flags), time.Unix(int64(v.UpdatedTime), 0), nil
 }
 
 // BackendFromFile is a helper function that creates a valid
