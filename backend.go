@@ -24,6 +24,13 @@ type jsonFileBackend struct {
 	filename string
 }
 
+type flagJson struct {
+	Name   string
+	Active bool
+	Rate  float64
+	Rules  []RuleInfo
+}
+
 type ruleInfoJson struct {
 	Type string `json:"type"`
 	OnMatch  RuleAction `json:"on_match"`
@@ -33,6 +40,29 @@ type ruleInfoJson struct {
 type JSONFormat struct {
 	Flags       []Flag `json:"flags"`
 	UpdatedTime float64          `json:"updated"`
+}
+
+func (ri *Flag) UnmarshalJSON(buf []byte) error {
+	var raw flagJson
+	err := json.Unmarshal(buf, &raw)
+	if err != nil {
+		return err
+	}
+
+	if len(raw.Rules) == 0 {
+		if(raw.Rate > 0) {
+			raw.Active = true
+			raw.Rules = []RuleInfo{
+				{&RateRule{Rate: raw.Rate}, RuleOn, RuleOff},
+			}
+		}
+	}
+
+	ri.Name = raw.Name
+ 	ri.Active = raw.Active
+	ri.Rules = raw.Rules
+
+	return nil
 }
 
 func (ri *RuleInfo) UnmarshalJSON(buf []byte) error {

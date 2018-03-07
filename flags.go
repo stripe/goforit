@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
-	"encoding/hex"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -40,6 +39,8 @@ type goforit struct {
 	flags               map[string]Flag
 	lastFlagRefreshTime time.Time
 
+	defaultTags map[string]string
+
 	stats statsdClient
 
 	// Last time we alerted that flags may be out of date
@@ -62,6 +63,7 @@ func newWithoutInit() *goforit {
 		flags:  map[string]Flag{},
 		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
 		logger: log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		defaultTags: map[string]string{},
 	}
 }
 
@@ -194,9 +196,19 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	if !flag.Active {
 		return
 	}
-	for _, r := range flag.Rules {
 
-		res, err := r.Rule.Handle(ctx, properties)
+	var mergeProperties = map[string]string{}
+
+	for k, v := range g.defaultTags {
+		mergeProperties[k] = v
+	}
+
+	for k, v := range properties {
+		mergeProperties[k] = v
+	}
+
+	for _, r := range flag.Rules {
+		res, err := r.Rule.Handle(ctx, mergeProperties)
 		if err != nil {
 			log.Printf("[goforit] error evaluating rule:\n", err)
 			return
@@ -235,10 +247,8 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 func getProperty(ctx context.Context, props map[string]string, prop string) (string, error) {
 	if v, ok := props[prop]; ok {
 		return v, nil
-	} else if v, ok := ctx.Value(prop).(string); ok {
-		return v, nil
 	} else {
-		return "", errors.New("No property " + prop + " in properties map or context.")
+		return "", errors.New("No property " + prop + " in properties map or default tags.")
 	}
 }
 
@@ -258,12 +268,11 @@ func (r *RateRule) Handle(ctx context.Context, props map[string]string) (bool, e
 		}
 		h.Write([]byte(buffer.String()))
 		bs := h.Sum(nil)
-		encodedStr := hex.EncodeToString(bs)
-		// get the most significant 16 digits
-		x, _ := strconv.ParseUint(encodedStr[0:4], 16, 16)
+		// get the most significant 32 digits
+		x := binary.BigEndian.Uint32(bs)
 		// check to see if the 16 most significant bits of the hex
 		// is less than (rate * 2^16)
-		return float64(x) < (r.Rate * float64(1<<16)), nil
+		return float64(x) < (r.Rate * float64(1<<32)), nil
 	} else {
 		f := rand.Float64()
 		return f < r.Rate, nil
@@ -322,6 +331,12 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 	g.stalenessMtx.Lock()
 	defer g.stalenessMtx.Unlock()
 	g.stalenessThreshold = threshold
+}
+
+func (g *goforit) AddDefaultTags(tags map[string]string) {
+	for k, v := range tags {
+		g.defaultTags[k] = v
+	}
 }
 
 // init initializes the flag backend, using the provided refresh function

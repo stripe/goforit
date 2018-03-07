@@ -23,6 +23,10 @@ func SetStalenessThreshold(threshold time.Duration) {
 	globalGoforit.SetStalenessThreshold(threshold)
 }
 
+func AddDefaultTags(tags map[string]string) {
+	globalGoforit.AddDefaultTags(tags)
+}
+
 func Init(interval time.Duration, backend Backend) {
 	globalGoforit.init(interval, backend)
 }
