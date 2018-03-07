@@ -172,6 +172,16 @@ func BenchmarkEnabled(b *testing.B) {
 	}
 }
 
+// assertFlagsEqual is a helper function for asserting
+// that two maps of flags are equal
+func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
+	assert.Equal(t, len(expected), len(actual))
+
+	for k, v := range expected {
+		assert.Equal(t, v, actual[k])
+	}
+}
+
 func TestOverride(t *testing.T) {
 	t.Parallel()
 
