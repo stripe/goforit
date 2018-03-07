@@ -14,7 +14,7 @@ func Example() {
 	backend := BackendFromFile("flags.csv")
 	Init(30*time.Second, backend)
 
-	if Enabled(ctx, "go.sun.mercury",  map[string]string{"host_name": "apibox_789"}) {
+	if Enabled(ctx, "go.sun.mercury", map[string]string{"host_name": "apibox_789"}) {
 		fmt.Println("The go.sun.mercury feature is enabled for 100% of requests")
 	}
 	// Same thing.

@@ -1,9 +1,9 @@
 package goforit
 
 import (
-	"errors"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -27,19 +27,19 @@ type jsonFileBackend struct {
 type flagJson struct {
 	Name   string
 	Active bool
-	Rate  float64
+	Rate   float64
 	Rules  []RuleInfo
 }
 
 type ruleInfoJson struct {
-	Type string `json:"type"`
-	OnMatch  RuleAction `json:"on_match"`
-	OnMiss   RuleAction `json:"on_miss"`
+	Type    string     `json:"type"`
+	OnMatch RuleAction `json:"on_match"`
+	OnMiss  RuleAction `json:"on_miss"`
 }
 
 type JSONFormat struct {
-	Flags       []Flag `json:"flags"`
-	UpdatedTime float64          `json:"updated"`
+	Flags       []Flag  `json:"flags"`
+	UpdatedTime float64 `json:"updated"`
 }
 
 func (ri *Flag) UnmarshalJSON(buf []byte) error {
@@ -50,7 +50,7 @@ func (ri *Flag) UnmarshalJSON(buf []byte) error {
 	}
 
 	if len(raw.Rules) == 0 {
-		if(raw.Rate > 0) {
+		if raw.Rate > 0 {
 			raw.Active = true
 			raw.Rules = []RuleInfo{
 				{&RateRule{Rate: raw.Rate}, RuleOn, RuleOff},
@@ -59,7 +59,7 @@ func (ri *Flag) UnmarshalJSON(buf []byte) error {
 	}
 
 	ri.Name = raw.Name
- 	ri.Active = raw.Active
+	ri.Active = raw.Active
 	ri.Rules = raw.Rules
 
 	return nil
@@ -90,7 +90,7 @@ func (ri *RuleInfo) UnmarshalJSON(buf []byte) error {
 		ri.Rule = &RateRule{}
 	default:
 		return errors.New("Bad type") // TODO: custom error type
- 	}
+	}
 
 	return json.Unmarshal(buf, ri.Rule)
 }

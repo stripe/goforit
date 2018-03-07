@@ -59,10 +59,10 @@ const DefaultInterval = 30 * time.Second
 func newWithoutInit() *goforit {
 	stats, _ := statsd.New(statsdAddress)
 	return &goforit{
-		stats:  stats,
-		flags:  map[string]Flag{},
-		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger: log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		stats:       stats,
+		flags:       map[string]Flag{},
+		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		logger:      log.New(os.Stderr, "[goforit] ", log.LstdFlags),
 		defaultTags: map[string]string{},
 	}
 }
@@ -89,25 +89,25 @@ type Flag struct {
 type RuleAction string
 
 const (
-	RuleOn RuleAction = "on"
-	RuleOff RuleAction = "off"
+	RuleOn       RuleAction = "on"
+	RuleOff      RuleAction = "off"
 	RuleContinue RuleAction = "continue"
 )
 
-var validRuleActions = map[RuleAction]bool {
-	RuleOn: true,
-	RuleOff: true,
+var validRuleActions = map[RuleAction]bool{
+	RuleOn:       true,
+	RuleOff:      true,
 	RuleContinue: true,
 }
 
 type RuleInfo struct {
-	Rule Rule
-	OnMatch  RuleAction
-	OnMiss   RuleAction
+	Rule    Rule
+	OnMatch RuleAction
+	OnMiss  RuleAction
 }
 
 type Rule interface {
-	Handle(ctx context.Context, props map[string]string) (bool, error)
+	Handle(props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
@@ -197,18 +197,18 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		return
 	}
 
-	var mergeProperties = map[string]string{}
+	var mergedProperties = map[string]string{}
 
 	for k, v := range g.defaultTags {
-		mergeProperties[k] = v
+		mergedProperties[k] = v
 	}
 
 	for k, v := range properties {
-		mergeProperties[k] = v
+		mergedProperties[k] = v
 	}
 
 	for _, r := range flag.Rules {
-		res, err := r.Rule.Handle(ctx, mergeProperties)
+		res, err := r.Rule.Handle(mergedProperties)
 		if err != nil {
 			log.Printf("[goforit] error evaluating rule:\n", err)
 			return
@@ -237,14 +237,13 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	return
 }
 
-
 //
 // func (g *goforit) Enabled(ctx, name, tags) bool {
 // 	tags = mergeTags(tags, g.defaultTags)
 // 	...
 // }
 
-func getProperty(ctx context.Context, props map[string]string, prop string) (string, error) {
+func getProperty(props map[string]string, prop string) (string, error) {
 	if v, ok := props[prop]; ok {
 		return v, nil
 	} else {
@@ -252,7 +251,7 @@ func getProperty(ctx context.Context, props map[string]string, prop string) (str
 	}
 }
 
-func (r *RateRule) Handle(ctx context.Context, props map[string]string) (bool, error) {
+func (r *RateRule) Handle(props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
@@ -260,7 +259,7 @@ func (r *RateRule) Handle(ctx context.Context, props map[string]string) (bool, e
 		sort.Strings(r.Properties)
 		var buffer bytes.Buffer
 		for _, val := range r.Properties {
-			prop, err := getProperty(ctx, props, val)
+			prop, err := getProperty(props, val)
 			if err != nil {
 				return false, err
 			}
@@ -279,8 +278,8 @@ func (r *RateRule) Handle(ctx context.Context, props map[string]string) (bool, e
 	}
 }
 
-func (r *MatchListRule) Handle(ctx context.Context, props map[string]string) (bool, error) {
-	prop, err := getProperty(ctx, props, r.Property)
+func (r *MatchListRule) Handle(props map[string]string) (bool, error) {
+	prop, err := getProperty(props, r.Property)
 	if err != nil {
 		return false, err
 	}
@@ -291,6 +290,7 @@ func (r *MatchListRule) Handle(ctx context.Context, props map[string]string) (bo
 	}
 	return false, nil
 }
+
 // RefreshFlags will use the provided thunk function to
 // fetch all feature flags and update the internal cache.
 // The thunk provided can use a variety of mechanisms for

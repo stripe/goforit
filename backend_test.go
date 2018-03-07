@@ -109,6 +109,6 @@ func TestMultipleDefinitions(t *testing.T) {
 	g.RefreshFlags(backend)
 
 	flag := g.flags[repeatedFlag]
-	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate:lastValue}, RuleOn, RuleOff}}})
+	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
 
 }
