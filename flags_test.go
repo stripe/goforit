@@ -222,6 +222,166 @@ func TestRateRule(t *testing.T) {
 	assert.Error(t, err)
 }
 
+type OnRule struct{}
+type OffRule struct{}
+
+func (r *OnRule) Handle(flag string, props map[string]string) (bool, error) {
+	return true, nil
+}
+
+func (r *OffRule) Handle(flag string, props map[string]string) (bool, error) {
+	return false, nil
+}
+
+type dummyRulesBackend struct{}
+
+func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
+	var flags = map[string]Flag{
+		"test1": Flag{
+			"test1",
+			true,
+			[]RuleInfo{
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test2": Flag{
+			"test2",
+			true,
+			[]RuleInfo{
+				{&OnRule{}, RuleOff, RuleOn},
+			},
+		},
+		"test3": Flag{
+			"test3",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test4": Flag{
+			"test4",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOn, RuleOff},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test5": Flag{
+			"test5",
+			true,
+			[]RuleInfo{
+				{&OnRule{}, RuleContinue, RuleOn},
+				{&OffRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test6": Flag{
+			"test6",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OffRule{}, RuleContinue, RuleOff},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test7": Flag{
+			"test7",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OnRule{}, RuleContinue, RuleOff},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test8": Flag{
+			"test8",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test9": Flag{
+			"test9",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OffRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test10": Flag{
+			"test10",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OffRule{}, RuleOn, RuleOff},
+				{&OnRule{}, RuleContinue, RuleOff},
+			},
+		},
+		"test11": Flag{
+			"test11",
+			true,
+			[]RuleInfo{},
+		},
+		"test12": Flag{
+			"test12",
+			false,
+			[]RuleInfo{
+				{&OnRule{}, RuleOn, RuleOn},
+			},
+		},
+	}
+	return flags, time.Time{}, nil
+}
+
+func TestCascadingRules(t *testing.T) {
+	t.Parallel()
+
+	g, _ := testGoforit(DefaultInterval, &dummyRulesBackend{})
+	defer g.Close()
+
+	// test match on, miss off single rule
+	assert.True(t, g.Enabled(context.Background(), "test1", nil))
+
+	// test match off, miss on single rule
+	assert.False(t, g.Enabled(context.Background(), "test2", nil))
+
+	// test match on, miss continue
+	assert.True(t, g.Enabled(context.Background(), "test3", nil))
+
+	// test match on, miss off
+	assert.False(t, g.Enabled(context.Background(), "test4", nil))
+
+	// test match continue
+	assert.False(t, g.Enabled(context.Background(), "test5", nil))
+
+	// test 3 rules -- 2nd rule off
+	assert.False(t, g.Enabled(context.Background(), "test6", nil))
+
+	// test cascade to last rule (continue to last rule)
+	// must match both 2nd and 3rd rule
+	assert.True(t, g.Enabled(context.Background(), "test7", nil))
+
+	// test cascade to last rule (continue to last rule)
+	// must match either 2nd rule or 3rd rule, only 3rd on
+	assert.True(t, g.Enabled(context.Background(), "test8", nil))
+
+	// test cascade to last rule (continue to last rule)
+	// must match either 2nd or 3rd, all 3 off
+	assert.False(t, g.Enabled(context.Background(), "test9", nil))
+
+	// test default behavior is off if all rules are "continue"
+	assert.False(t, g.Enabled(context.Background(), "test10", nil))
+
+	// test default on if no rules and active = true
+	assert.True(t, g.Enabled(context.Background(), "test11", nil))
+
+	// test return false categorically if active = false
+	assert.False(t, g.Enabled(context.Background(), "test12", nil))
+}
+
 // dummyBackend lets us test the RefreshFlags
 // by returning the flags only the second time the Refresh
 // method is called
@@ -292,11 +452,20 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 	}
 }
 
-// func TestDefaultTags(t *testing.T) {
-// 	t.Parallel()
-//
-// 	backend := JSONB
-// }
+type dummyDefaultFlagsBackend struct{}
+
+func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error) {
+	var testFlag = Flag{
+		"test",
+		true,
+		[]RuleInfo{
+			{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOff, RuleContinue},
+			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
+			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
+		},
+	}
+	return map[string]Flag{"test": testFlag}, time.Time{}, nil
+}
 
 func TestDefaultTags(t *testing.T) {
 	t.Parallel()
@@ -325,21 +494,6 @@ func TestDefaultTags(t *testing.T) {
 	g.AddDefaultTags(map[string]string{"cluster": "northwest-01"})
 	assert.True(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
 
-}
-
-type dummyDefaultFlagsBackend struct{}
-
-func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error) {
-	var testFlag = Flag{
-		"test",
-		true,
-		[]RuleInfo{
-			{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOff, RuleContinue},
-			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
-			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
-		},
-	}
-	return map[string]Flag{"test": testFlag}, time.Time{}, nil
 }
 
 func TestOverride(t *testing.T) {

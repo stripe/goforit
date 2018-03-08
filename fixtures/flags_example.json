@@ -31,6 +31,10 @@
           "on_miss": "off"
         }
       ]
+    },
+    {
+      "name": "go.sun.mercury",
+      "rate": 0.5
     }
   ],
   "updated": 1519247256.0626957

@@ -81,6 +81,13 @@ func TestParseFlagsJSON(t *testing.T) {
 						{&RateRule{0.01, []string{"cluster", "db"}}, RuleOn, RuleOff},
 					},
 				},
+				{
+					"go.sun.mercury",
+					true,
+					[]RuleInfo{
+						{&RateRule{Rate: 0.5}, RuleOn, RuleOff},
+					},
+				},
 			},
 		},
 	}

@@ -39,6 +39,7 @@ type goforit struct {
 	flags               map[string]Flag
 	lastFlagRefreshTime time.Time
 
+	tagsMtx     sync.RWMutex
 	defaultTags map[string]string
 
 	stats statsdClient
@@ -187,30 +188,39 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	defer g.flagsMtx.RUnlock()
 	enabled = false
 	if g.flags == nil {
-		log.Printf("[goforit] empty flags map")
+		g.logger.Printf("[goforit] empty flags map")
 		return
 	}
 	lastRefreshTime = g.lastFlagRefreshTime
 	flag := g.flags[name]
 
+	// if flag is inactive, always return false
 	if !flag.Active {
 		return
 	}
 
 	var mergedProperties = map[string]string{}
 
+	g.tagsMtx.RLock()
 	for k, v := range g.defaultTags {
 		mergedProperties[k] = v
 	}
+	g.tagsMtx.RUnlock() // should i defer this? maybe inside its own scope?
 
 	for k, v := range properties {
 		mergedProperties[k] = v
 	}
 
+	// if there are no rules, but flag is active, always return true
+	if len(flag.Rules) == 0 {
+		enabled = true
+		return
+	}
+
 	for _, r := range flag.Rules {
 		res, err := r.Rule.Handle(flag.Name, mergedProperties)
 		if err != nil {
-			log.Printf("[goforit] error evaluating rule:\n", err)
+			g.logger.Printf("[goforit] error evaluating rule:\n %s", err)
 			return
 		}
 		var matchBehavior RuleAction
@@ -220,28 +230,22 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 			matchBehavior = r.OnMiss
 		}
 		switch matchBehavior {
-		case "on":
+		case RuleOn:
 			enabled = true
 			return
-		case "off":
+		case RuleOff:
 			enabled = false
 			return
-		case "continue":
+		case RuleContinue:
 			continue
 		default:
-			log.Printf("[goforit] unknown match behavior: " + string(matchBehavior))
+			g.logger.Printf("[goforit] unknown match behavior: " + string(matchBehavior))
 			return
 		}
 	}
 	enabled = false
 	return
 }
-
-//
-// func (g *goforit) Enabled(ctx, name, tags) bool {
-// 	tags = mergeTags(tags, g.defaultTags)
-// 	...
-// }
 
 func getProperty(props map[string]string, prop string) (string, error) {
 	if v, ok := props[prop]; ok {
@@ -260,6 +264,7 @@ func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 		var buffer bytes.Buffer
 		buffer.WriteString(flag)
 		for _, val := range r.Properties {
+			buffer.WriteString("\000")
 			prop, err := getProperty(props, val)
 			if err != nil {
 				return false, err
@@ -270,8 +275,8 @@ func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 		bs := h.Sum(nil)
 		// get the most significant 32 digits
 		x := binary.BigEndian.Uint32(bs)
-		// check to see if the 16 most significant bits of the hex
-		// is less than (rate * 2^16)
+		// check to see if the 32 most significant bits of the hex
+		// is less than (rate * 2^32)
 		return float64(x) < (r.Rate * float64(1<<32)), nil
 	} else {
 		f := rand.Float64()
@@ -335,6 +340,8 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 }
 
 func (g *goforit) AddDefaultTags(tags map[string]string) {
+	g.tagsMtx.Lock()
+	defer g.tagsMtx.Unlock()
 	for k, v := range tags {
 		g.defaultTags[k] = v
 	}

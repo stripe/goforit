@@ -42,14 +42,19 @@ type JSONFormat struct {
 	UpdatedTime float64 `json:"updated"`
 }
 
+// While the goforit client allows for complex feature flag functionality, it is possible to have
+//simple flags that specify only Name and Rate (at least for the time being).Instead of using
+// versions to formalize this, we will write some simple logic in a custom Unmarshaler to handle
+// both cases
 func (ri *Flag) UnmarshalJSON(buf []byte) error {
 	var raw flagJson
 	err := json.Unmarshal(buf, &raw)
 	if err != nil {
 		return err
 	}
-
 	if len(raw.Rules) == 0 {
+		// if no rules are specified, we create a RateRule if a non-zero rate was specified, and ensure
+		// the flag is active. if no rate was specified, active should be default to false
 		if raw.Rate > 0 {
 			raw.Active = true
 			raw.Rules = []RuleInfo{
