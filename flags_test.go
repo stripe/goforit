@@ -112,6 +112,116 @@ func TestEnabled(t *testing.T) {
 	assert.InEpsilon(t, 0.5, actualRate, ε)
 }
 
+func TestMatchListRule(t *testing.T) {
+
+	var r = MatchListRule{"host_name", []string{"apibox_123", "apibox_456", "apibox_789"}}
+
+	// return false and error if empty properties map passed
+	res, err := r.Handle("test", map[string]string{})
+	assert.False(t, res)
+	assert.NotNil(t, err)
+
+	// return false and error if props map passed without specific property needed
+	res, err = r.Handle("test", map[string]string{"host_type": "qa-east", "db": "mongo-prod"})
+	assert.False(t, res)
+	assert.NotNil(t, err)
+
+	// return false and no error if props map contains property but value not in list
+	res, err = r.Handle("test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"})
+	assert.False(t, res)
+	assert.Nil(t, err)
+
+	// return true and no error if property value is in list
+	res, err = r.Handle("test", map[string]string{"host_name": "apibox_456", "db": "mongo-prod"})
+	assert.True(t, res)
+	assert.Nil(t, err)
+
+	r = MatchListRule{"host_name", []string{}}
+
+	// return false and no error if list of values is empty
+	res, err = r.Handle("test", map[string]string{"host_name": "apibox_456", "db": "mongo-prod"})
+	assert.False(t, res)
+	assert.Nil(t, err)
+
+}
+
+func TestRateRule(t *testing.T) {
+	t.Parallel()
+
+	// test normal sample rule (no properties) at different rates
+	// by calling Handle() 10,000 times and comparing actual rate
+	// to expected rate
+	testCases := []float64{1, 0, 0.01, 0.5, 0.8}
+	for _, rate := range testCases {
+		var iterations = 10000
+		var r = RateRule{Rate: rate}
+		count := 0
+		for i := 0; i < iterations; i++ {
+			match, err := r.Handle("test", map[string]string{})
+			assert.Nil(t, err)
+			if match {
+				count++
+			}
+		}
+
+		actualRate := float64(count) / float64(iterations)
+		assert.InDelta(t, rate, actualRate, 0.02)
+	}
+
+	//test rate_by (w/ property) by generating random multi-dimension props
+	//and memoizing their Enabled checks(), and confirming same results
+	//when running Enabled again. Also checks if actual rate ~= expected rate
+	type resultKey struct{ a, b int }
+	matches := 0
+	misses := 0
+	results := map[resultKey]bool{}
+	var r = RateRule{0.5, []string{"a", "b", "c"}}
+	for a := 0; a < 100; a++ {
+		for b := 0; b < 100; b++ {
+			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			match, err := r.Handle("test", props)
+			assert.Nil(t, err)
+			if match {
+				matches++
+			} else {
+				misses++
+			}
+			results[resultKey{a, b}] = match
+		}
+	}
+	assert.InDelta(t, misses, matches, 200)
+
+	for a := 0; a < 100; a++ {
+		for b := 0; b < 100; b++ {
+			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			match, err := r.Handle("test", props)
+			assert.Nil(t, err)
+			assert.Equal(t, results[resultKey{a, b}], match)
+		}
+	}
+
+	//results should depend on flag name
+	//try a different flag name and check the same properties. we expect 50% overlap
+	disagree := 0
+	for a := 0; a < 100; a++ {
+		for b := 0; b < 100; b++ {
+			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			match, err := r.Handle("test2", props)
+			assert.Nil(t, err)
+			if results[resultKey{a, b}] != match {
+				disagree++
+			}
+		}
+	}
+	assert.InDelta(t, 100*100/2, disagree, 200)
+
+	// If a tag is missing, that's an error
+	tags := map[string]string{"a": "foo"}
+	match, err := r.Handle("test", tags)
+	assert.False(t, match)
+	assert.Error(t, err)
+}
+
 // dummyBackend lets us test the RefreshFlags
 // by returning the flags only the second time the Refresh
 // method is called
@@ -180,6 +290,56 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 	for k, v := range expected {
 		assert.Equal(t, v, actual[k])
 	}
+}
+
+// func TestDefaultTags(t *testing.T) {
+// 	t.Parallel()
+//
+// 	backend := JSONB
+// }
+
+func TestDefaultTags(t *testing.T) {
+	t.Parallel()
+
+	const iterations = 100000
+	g, _ := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{})
+	defer g.Close()
+
+	// if no properties passed, and no default tags added, then should return false
+	assert.False(t, g.Enabled(context.Background(), "test", nil))
+
+	// test match list rule by adding hostname to default tag
+	g.AddDefaultTags(map[string]string{"host_name": "apibox_123", "env": "prod"})
+	assert.True(t, g.Enabled(context.Background(), "test", nil))
+
+	// test overriding global default in local props map
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_789"}))
+
+	// if missing cluster+db, then rate rule should return false
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001"}))
+
+	// if only one of cluster and db, then rate rule should return false
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
+
+	// test combination of global tag and local props
+	g.AddDefaultTags(map[string]string{"cluster": "northwest-01"})
+	assert.True(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
+
+}
+
+type dummyDefaultFlagsBackend struct{}
+
+func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error) {
+	var testFlag = Flag{
+		"test",
+		true,
+		[]RuleInfo{
+			{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOff, RuleContinue},
+			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
+			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
+		},
+	}
+	return map[string]Flag{"test": testFlag}, time.Time{}, nil
 }
 
 func TestOverride(t *testing.T) {

@@ -107,7 +107,7 @@ type RuleInfo struct {
 }
 
 type Rule interface {
-	Handle(props map[string]string) (bool, error)
+	Handle(flag string, props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
@@ -208,7 +208,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	}
 
 	for _, r := range flag.Rules {
-		res, err := r.Rule.Handle(mergedProperties)
+		res, err := r.Rule.Handle(flag.Name, mergedProperties)
 		if err != nil {
 			log.Printf("[goforit] error evaluating rule:\n", err)
 			return
@@ -251,13 +251,14 @@ func getProperty(props map[string]string, prop string) (string, error) {
 	}
 }
 
-func (r *RateRule) Handle(props map[string]string) (bool, error) {
+func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
 		// sort the properties for consistent behavior (should we sort on Refresh()?)
 		sort.Strings(r.Properties)
 		var buffer bytes.Buffer
+		buffer.WriteString(flag)
 		for _, val := range r.Properties {
 			prop, err := getProperty(props, val)
 			if err != nil {
@@ -278,7 +279,7 @@ func (r *RateRule) Handle(props map[string]string) (bool, error) {
 	}
 }
 
-func (r *MatchListRule) Handle(props map[string]string) (bool, error) {
+func (r *MatchListRule) Handle(flag string, props map[string]string) (bool, error) {
 	prop, err := getProperty(props, r.Property)
 	if err != nil {
 		return false, err
