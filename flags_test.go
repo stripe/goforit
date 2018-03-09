@@ -650,7 +650,8 @@ func TestRefreshCycleMetric(t *testing.T) {
 	g, _ := testGoforit(10*time.Millisecond, backend)
 	defer g.Close()
 
-	for i := 0; i < 10; i++ {
+	iters := 30
+	for i := 0; i < iters; i++ {
 		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
@@ -658,26 +659,27 @@ func TestRefreshCycleMetric(t *testing.T) {
 	// want to stop ticker to simulate Refresh() hanging
 	g.Close()
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < iters; i++ {
 		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
 
 	values := g.stats.(*mockStatsd).getHistogramValues("goforit.flags.last_refresh_s")
 	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
-	for i := 0; i < 10; i++ {
+	for i := 0; i < iters; i++ {
 		v := values[i]
-		// Should be ~< 10ms
-		assert.InDelta(t, 0.007, v, 0.015)
+		// Should be small. Really 10ms, but add a bit of wiggle room
+		assert.True(t, v < 0.03)
 	}
 
 	last := math.Inf(-1)
 	large := 0
-	for i := 10; i < 20; i++ {
+	for i := iters; i < 2*iters; i++ {
 		v := values[i]
 		assert.True(t, v > last)
 		last = v
-		if v > 0.012 {
+		if v > 0.03 {
+			// At least some should be large now, since we're not refreshing
 			large++
 		}
 	}
