@@ -471,7 +471,7 @@ func TestDefaultTags(t *testing.T) {
 	t.Parallel()
 
 	const iterations = 100000
-	g, _ := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{})
+	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{})
 	defer g.Close()
 
 	// if no properties passed, and no default tags added, then should return false
@@ -494,6 +494,14 @@ func TestDefaultTags(t *testing.T) {
 	g.AddDefaultTags(map[string]string{"cluster": "northwest-01"})
 	assert.True(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
 
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.True(t, len(lines) == 6)
+	for i, line := range lines {
+		if i%2 == 1 {
+			assert.Contains(t, line, "No property")
+			assert.Contains(t, line, "in properties map or default tags")
+		}
+	}
 }
 
 func TestOverride(t *testing.T) {
@@ -660,7 +668,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		v := values[i]
 		// Should be ~< 10ms
-		assert.InDelta(t, 0.005, v, 0.010)
+		assert.InDelta(t, 0.007, v, 0.015)
 	}
 
 	last := math.Inf(-1)

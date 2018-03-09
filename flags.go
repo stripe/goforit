@@ -201,11 +201,9 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 
 	var mergedProperties = map[string]string{}
 
-	g.tagsMtx.RLock()
-	for k, v := range g.defaultTags {
+	for k, v := range g.getDefaultTags() {
 		mergedProperties[k] = v
 	}
-	g.tagsMtx.RUnlock() // should i defer this? maybe inside its own scope?
 
 	for k, v := range properties {
 		mergedProperties[k] = v
@@ -247,6 +245,16 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	return
 }
 
+func (g *goforit) getDefaultTags() map[string]string {
+	g.tagsMtx.RLock()
+	defer g.tagsMtx.RUnlock()
+	var temp = map[string]string{}
+	for k, v := range g.defaultTags {
+		temp[k] = v
+	}
+	return temp
+}
+
 func getProperty(props map[string]string, prop string) (string, error) {
 	if v, ok := props[prop]; ok {
 		return v, nil
@@ -259,7 +267,7 @@ func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
-		// sort the properties for consistent behavior (should we sort on Refresh()?)
+		// sort the properties for consistent behavior
 		sort.Strings(r.Properties)
 		var buffer bytes.Buffer
 		buffer.WriteString(flag)
