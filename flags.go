@@ -15,11 +15,17 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
+	"github.com/getsentry/raven-go"
 )
 
 const statsdAddress = "127.0.0.1:8200"
 
 const lastAssertInterval = 5 * time.Minute
+
+// An interface for the parts of raven that we need
+type ravenClient interface {
+	CaptureError(err error, tags map[string]string, interfaces ...raven.Interface) string
+}
 
 // An interface reflecting the parts of statsd that we need, so we can mock it
 type statsdClient interface {
@@ -53,6 +59,9 @@ type goforit struct {
 	rnd    *rand.Rand
 
 	logger *log.Logger
+
+	sentryMtx sync.RWMutex
+	sentry    *raven.Client
 }
 
 const DefaultInterval = 30 * time.Second
@@ -188,7 +197,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	defer g.flagsMtx.RUnlock()
 	enabled = false
 	if g.flags == nil {
-		g.logger.Printf("[goforit] empty flags map")
+		g.handleError("empty flags map")
 		return
 	}
 	lastRefreshTime = g.lastFlagRefreshTime
@@ -218,7 +227,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	for _, r := range flag.Rules {
 		res, err := r.Rule.Handle(flag.Name, mergedProperties)
 		if err != nil {
-			g.logger.Printf("[goforit] error evaluating rule:\n %s", err)
+			g.handleError("error evaluating rule: %s", err)
 			return
 		}
 		var matchBehavior RuleAction
@@ -237,12 +246,24 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		case RuleContinue:
 			continue
 		default:
-			g.logger.Printf("[goforit] unknown match behavior: " + string(matchBehavior))
+			g.handleError("unknown match behaviour: %s", matchBehavior)
 			return
 		}
 	}
 	enabled = false
 	return
+}
+
+// TODO: Use custom error type?
+func (g *goforit) handleError(msg string, args ...interface{}) {
+	g.sentryMtx.RLock()
+	defer g.sentryMtx.RUnlock()
+
+	msg = fmt.Sprintf(msg, args...)
+	if g.sentry != nil {
+		g.sentry.CaptureError(errors.New("[goforit] "+msg), nil)
+	}
+	g.logger.Print(msg)
 }
 
 func (g *goforit) getDefaultTags() map[string]string {
@@ -311,6 +332,13 @@ func (r *MatchListRule) Handle(flag string, props map[string]string) (bool, erro
 // querying the flag values, such as a local file or
 // Consul key/value storage.
 func (g *goforit) RefreshFlags(backend Backend) {
+	defer func() {
+		if r := recover(); r != nil {
+			s := fmt.Sprint(r)
+			g.handleError(s)
+		}
+	}()
+
 	// Ask the backend for the flags
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
@@ -399,4 +427,13 @@ func (g *goforit) Close() error {
 		g.ticker = nil
 	}
 	return nil
+}
+
+// SetupSentry adds sentry integration to this goforit
+func (g *goforit) SetupSentry(r *raven.Client) {
+	// TODO: Errors could potentially happen before setting up sentry. We should
+	// provide a way to do this in advance of things that could error.
+	g.sentryMtx.Lock()
+	defer g.sentryMtx.Unlock()
+	g.sentry = r
 }

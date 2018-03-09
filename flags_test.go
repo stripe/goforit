@@ -3,6 +3,7 @@ package goforit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"math"
 	"math/rand"
@@ -470,7 +471,6 @@ func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error)
 func TestDefaultTags(t *testing.T) {
 	t.Parallel()
 
-	const iterations = 100000
 	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{})
 	defer g.Close()
 
@@ -495,12 +495,10 @@ func TestDefaultTags(t *testing.T) {
 	assert.True(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	assert.True(t, len(lines) == 6)
-	for i, line := range lines {
-		if i%2 == 1 {
-			assert.Contains(t, line, "No property")
-			assert.Contains(t, line, "in properties map or default tags")
-		}
+	assert.Equal(t, 3, len(lines))
+	for _, line := range lines {
+		assert.Contains(t, line, "No property")
+		assert.Contains(t, line, "in properties map or default tags")
 	}
 }
 
@@ -739,3 +737,30 @@ func TestStaleRefresh(t *testing.T) {
 	assert.Contains(t, lines[0], "Refresh")
 	assert.Contains(t, lines[0], "50ms")
 }
+
+type errorRule struct{}
+
+func (e *errorRule) Handle(flag string, props map[string]string) (bool, error) {
+	return false, errors.New("intentional error")
+}
+
+type dummyErrorBackend struct{}
+
+func (b *dummyErrorBackend) Refresh() (map[string]Flag, time.Time, error) {
+	var testFlag = Flag{
+		"test",
+		true,
+		[]RuleInfo{
+			{&errorRule{}, RuleOn, RuleOff},
+		},
+	}
+	return map[string]Flag{"test": testFlag}, time.Time{}, nil
+}
+
+// Can we send an error to sentry?
+func TestSentry(t *testing.T) {
+	t.Parallel()
+
+}
+
+// Can we send a panic to sentry?

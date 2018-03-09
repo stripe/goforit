@@ -3,6 +3,8 @@ package goforit
 import (
 	"context"
 	"time"
+
+	"github.com/getsentry/raven-go"
 )
 
 var globalGoforit *goforit
@@ -33,4 +35,8 @@ func Init(interval time.Duration, backend Backend) {
 
 func Close() error {
 	return globalGoforit.Close()
+}
+
+func SetupSentry(r *raven.Client) {
+	globalGoforit.SetupSentry(r)
 }
