@@ -11,8 +11,8 @@ func init() {
 	globalGoforit = newWithoutInit()
 }
 
-func Enabled(ctx context.Context, name string) (enabled bool) {
-	return globalGoforit.Enabled(ctx, name)
+func Enabled(ctx context.Context, name string, props map[string]string) (enabled bool) {
+	return globalGoforit.Enabled(ctx, name, props)
 }
 
 func RefreshFlags(backend Backend) {
@@ -21,6 +21,10 @@ func RefreshFlags(backend Backend) {
 
 func SetStalenessThreshold(threshold time.Duration) {
 	globalGoforit.SetStalenessThreshold(threshold)
+}
+
+func AddDefaultTags(tags map[string]string) {
+	globalGoforit.AddDefaultTags(tags)
 }
 
 func Init(interval time.Duration, backend Backend) {

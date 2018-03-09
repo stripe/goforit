@@ -3,6 +3,7 @@ package goforit
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -23,9 +24,80 @@ type jsonFileBackend struct {
 	filename string
 }
 
+type flagJson struct {
+	Name   string
+	Active bool
+	Rate   float64
+	Rules  []RuleInfo
+}
+
+type ruleInfoJson struct {
+	Type    string     `json:"type"`
+	OnMatch RuleAction `json:"on_match"`
+	OnMiss  RuleAction `json:"on_miss"`
+}
+
 type JSONFormat struct {
 	Flags       []Flag  `json:"flags"`
 	UpdatedTime float64 `json:"updated"`
+}
+
+// While the goforit client allows for complex feature flag functionality, it is possible to have
+//simple flags that specify only Name and Rate (at least for the time being).Instead of using
+// versions to formalize this, we will write some simple logic in a custom Unmarshaler to handle
+// both cases
+func (ri *Flag) UnmarshalJSON(buf []byte) error {
+	var raw flagJson
+	err := json.Unmarshal(buf, &raw)
+	if err != nil {
+		return err
+	}
+	if len(raw.Rules) == 0 {
+		// if no rules are specified, we create a RateRule if a non-zero rate was specified, and ensure
+		// the flag is active. if no rate was specified, active should be default to false
+		if raw.Rate > 0 {
+			raw.Active = true
+			raw.Rules = []RuleInfo{
+				{&RateRule{Rate: raw.Rate}, RuleOn, RuleOff},
+			}
+		}
+	}
+
+	ri.Name = raw.Name
+	ri.Active = raw.Active
+	ri.Rules = raw.Rules
+
+	return nil
+}
+
+func (ri *RuleInfo) UnmarshalJSON(buf []byte) error {
+	var raw ruleInfoJson
+	err := json.Unmarshal(buf, &raw)
+	if err != nil {
+		return err
+	}
+
+	// Validate actions
+	if !validRuleActions[raw.OnMatch] {
+		return errors.New("Bad action") // TODO: make a custom error type
+	}
+	if !validRuleActions[raw.OnMiss] {
+		return errors.New("Bad action") // TODO: make a custom error type
+	}
+	ri.OnMatch = raw.OnMatch
+	ri.OnMiss = raw.OnMiss
+
+	// Handle the type
+	switch raw.Type {
+	case "match_list": // TODO: constant
+		ri.Rule = &MatchListRule{}
+	case "sample": // TODO: constant
+		ri.Rule = &RateRule{}
+	default:
+		return errors.New("Bad type") // TODO: custom error type
+	}
+
+	return json.Unmarshal(buf, ri.Rule)
 }
 
 func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
@@ -48,7 +120,7 @@ func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
 func flagsToMap(flags []Flag) map[string]Flag {
 	flagsMap := map[string]Flag{}
 	for _, flag := range flags {
-		flagsMap[flag.Name] = Flag{Name: flag.Name, Rate: flag.Rate}
+		flagsMap[flag.Name] = flag
 	}
 	return flagsMap
 }
@@ -76,7 +148,7 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 			rate = 0
 		}
 
-		flags[name] = Flag{Name: name, Rate: rate}
+		flags[name] = Flag{Name: name, Active: true, Rules: []RuleInfo{{&RateRule{Rate: rate}, RuleOn, RuleOff}}}
 	}
 	return flags, time.Time{}, nil
 }

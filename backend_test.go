@@ -26,15 +26,18 @@ func TestParseFlagsCSV(t *testing.T) {
 			Expected: []Flag{
 				{
 					"go.sun.money",
-					0,
+					true,
+					[]RuleInfo{{&RateRule{Rate: 0}, RuleOn, RuleOff}},
 				},
 				{
 					"go.moon.mercury",
-					1,
+					true,
+					[]RuleInfo{{&RateRule{Rate: 1}, RuleOn, RuleOff}},
 				},
 				{
 					"go.stars.money",
-					0.5,
+					true,
+					[]RuleInfo{{&RateRule{Rate: 0.5}, RuleOn, RuleOff}},
 				},
 			},
 		},
@@ -70,8 +73,20 @@ func TestParseFlagsJSON(t *testing.T) {
 			Filename: filepath.Join("fixtures", "flags_example.json"),
 			Expected: []Flag{
 				{
-					"sequins.prevent_download",
-					0,
+					"go.sun.moon",
+					true,
+					[]RuleInfo{
+						{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOff, RuleContinue},
+						{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOn, RuleContinue},
+						{&RateRule{0.01, []string{"cluster", "db"}}, RuleOn, RuleOff},
+					},
+				},
+				{
+					"go.sun.mercury",
+					true,
+					[]RuleInfo{
+						{&RateRule{Rate: 0.5}, RuleOn, RuleOff},
+					},
 				},
 			},
 		},
@@ -101,6 +116,6 @@ func TestMultipleDefinitions(t *testing.T) {
 	g.RefreshFlags(backend)
 
 	flag := g.flags[repeatedFlag]
-	assert.Equal(t, flag, Flag{repeatedFlag, lastValue})
+	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
 
 }

@@ -1,11 +1,16 @@
 package goforit
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -34,6 +39,9 @@ type goforit struct {
 	flags               map[string]Flag
 	lastFlagRefreshTime time.Time
 
+	tagsMtx     sync.RWMutex
+	defaultTags map[string]string
+
 	stats statsdClient
 
 	// Last time we alerted that flags may be out of date
@@ -49,18 +57,14 @@ type goforit struct {
 
 const DefaultInterval = 30 * time.Second
 
-type Flag struct {
-	Name string
-	Rate float64
-}
-
 func newWithoutInit() *goforit {
 	stats, _ := statsd.New(statsdAddress)
 	return &goforit{
-		stats:  stats,
-		flags:  map[string]Flag{},
-		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger: log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		stats:       stats,
+		flags:       map[string]Flag{},
+		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		logger:      log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		defaultTags: map[string]string{},
 	}
 }
 
@@ -75,6 +79,46 @@ func (g *goforit) rand() float64 {
 	g.rndMtx.Lock()
 	defer g.rndMtx.Unlock()
 	return g.rnd.Float64()
+}
+
+type Flag struct {
+	Name   string
+	Active bool
+	Rules  []RuleInfo
+}
+
+type RuleAction string
+
+const (
+	RuleOn       RuleAction = "on"
+	RuleOff      RuleAction = "off"
+	RuleContinue RuleAction = "continue"
+)
+
+var validRuleActions = map[RuleAction]bool{
+	RuleOn:       true,
+	RuleOff:      true,
+	RuleContinue: true,
+}
+
+type RuleInfo struct {
+	Rule    Rule
+	OnMatch RuleAction
+	OnMiss  RuleAction
+}
+
+type Rule interface {
+	Handle(flag string, props map[string]string) (bool, error)
+}
+
+type MatchListRule struct {
+	Property string
+	Values   []string
+}
+
+type RateRule struct {
+	Rate       float64
+	Properties []string
 }
 
 func (g *goforit) getStalenessThreshold() time.Duration {
@@ -119,7 +163,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
-func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
+func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	var lastRefreshTime time.Time
 	defer func() {
 		var gauge float64
@@ -142,21 +186,123 @@ func (g *goforit) Enabled(ctx context.Context, name string) (enabled bool) {
 
 	g.flagsMtx.RLock()
 	defer g.flagsMtx.RUnlock()
+	enabled = false
 	if g.flags == nil {
-		enabled = false
+		g.logger.Printf("[goforit] empty flags map")
 		return
 	}
 	lastRefreshTime = g.lastFlagRefreshTime
 	flag := g.flags[name]
 
-	// equality should be strict
-	// because Float64() can return 0
-	if f := g.rand(); f < flag.Rate {
+	// if flag is inactive, always return false
+	if !flag.Active {
+		return
+	}
+
+	var mergedProperties = map[string]string{}
+
+	for k, v := range g.getDefaultTags() {
+		mergedProperties[k] = v
+	}
+
+	for k, v := range properties {
+		mergedProperties[k] = v
+	}
+
+	// if there are no rules, but flag is active, always return true
+	if len(flag.Rules) == 0 {
 		enabled = true
 		return
 	}
+
+	for _, r := range flag.Rules {
+		res, err := r.Rule.Handle(flag.Name, mergedProperties)
+		if err != nil {
+			g.logger.Printf("[goforit] error evaluating rule:\n %s", err)
+			return
+		}
+		var matchBehavior RuleAction
+		if res {
+			matchBehavior = r.OnMatch
+		} else {
+			matchBehavior = r.OnMiss
+		}
+		switch matchBehavior {
+		case RuleOn:
+			enabled = true
+			return
+		case RuleOff:
+			enabled = false
+			return
+		case RuleContinue:
+			continue
+		default:
+			g.logger.Printf("[goforit] unknown match behavior: " + string(matchBehavior))
+			return
+		}
+	}
 	enabled = false
 	return
+}
+
+func (g *goforit) getDefaultTags() map[string]string {
+	g.tagsMtx.RLock()
+	defer g.tagsMtx.RUnlock()
+	var temp = map[string]string{}
+	for k, v := range g.defaultTags {
+		temp[k] = v
+	}
+	return temp
+}
+
+func getProperty(props map[string]string, prop string) (string, error) {
+	if v, ok := props[prop]; ok {
+		return v, nil
+	} else {
+		return "", errors.New("No property " + prop + " in properties map or default tags.")
+	}
+}
+
+func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
+	if r.Properties != nil {
+		// get the sha1 of the properties values concat
+		h := sha1.New()
+		// sort the properties for consistent behavior
+		sort.Strings(r.Properties)
+		var buffer bytes.Buffer
+		buffer.WriteString(flag)
+		for _, val := range r.Properties {
+			buffer.WriteString("\000")
+			prop, err := getProperty(props, val)
+			if err != nil {
+				return false, err
+			}
+			buffer.WriteString(prop)
+		}
+		h.Write([]byte(buffer.String()))
+		bs := h.Sum(nil)
+		// get the most significant 32 digits
+		x := binary.BigEndian.Uint32(bs)
+		// check to see if the 32 most significant bits of the hex
+		// is less than (rate * 2^32)
+		return float64(x) < (r.Rate * float64(1<<32)), nil
+	} else {
+		f := rand.Float64()
+		return f < r.Rate, nil
+	}
+}
+
+func (r *MatchListRule) Handle(flag string, props map[string]string) (bool, error) {
+	prop, err := getProperty(props, r.Property)
+	if err != nil {
+		return false, err
+	}
+	for _, val := range r.Values {
+		if val == prop {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // RefreshFlags will use the provided thunk function to
@@ -199,6 +345,14 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 	g.stalenessMtx.Lock()
 	defer g.stalenessMtx.Unlock()
 	g.stalenessThreshold = threshold
+}
+
+func (g *goforit) AddDefaultTags(tags map[string]string) {
+	g.tagsMtx.Lock()
+	defer g.tagsMtx.Unlock()
+	for k, v := range tags {
+		g.defaultTags[k] = v
+	}
 }
 
 // init initializes the flag backend, using the provided refresh function

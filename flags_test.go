@@ -81,8 +81,8 @@ func TestGlobal(t *testing.T) {
 	Init(DefaultInterval, backend)
 	defer Close()
 
-	assert.False(t, Enabled(nil, "go.sun.money"))
-	assert.True(t, Enabled(nil, "go.moon.mercury"))
+	assert.False(t, Enabled(nil, "go.sun.money", nil))
+	assert.True(t, Enabled(nil, "go.moon.mercury", nil))
 }
 
 func TestEnabled(t *testing.T) {
@@ -94,22 +94,292 @@ func TestEnabled(t *testing.T) {
 	g, _ := testGoforit(DefaultInterval, backend)
 	defer g.Close()
 
-	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 
 	// nil is equivalent to empty context
-	assert.False(t, g.Enabled(nil, "go.sun.money"))
-	assert.True(t, g.Enabled(nil, "go.moon.mercury"))
+	assert.False(t, g.Enabled(nil, "go.sun.money", nil))
+	assert.True(t, g.Enabled(nil, "go.moon.mercury", nil))
 
 	count := 0
 	for i := 0; i < iterations; i++ {
-		if g.Enabled(context.Background(), "go.stars.money") {
+		if g.Enabled(context.Background(), "go.stars.money", nil) {
 			count++
 		}
 	}
 	actualRate := float64(count) / float64(iterations)
 
 	assert.InEpsilon(t, 0.5, actualRate, ε)
+}
+
+func TestMatchListRule(t *testing.T) {
+
+	var r = MatchListRule{"host_name", []string{"apibox_123", "apibox_456", "apibox_789"}}
+
+	// return false and error if empty properties map passed
+	res, err := r.Handle("test", map[string]string{})
+	assert.False(t, res)
+	assert.NotNil(t, err)
+
+	// return false and error if props map passed without specific property needed
+	res, err = r.Handle("test", map[string]string{"host_type": "qa-east", "db": "mongo-prod"})
+	assert.False(t, res)
+	assert.NotNil(t, err)
+
+	// return false and no error if props map contains property but value not in list
+	res, err = r.Handle("test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"})
+	assert.False(t, res)
+	assert.Nil(t, err)
+
+	// return true and no error if property value is in list
+	res, err = r.Handle("test", map[string]string{"host_name": "apibox_456", "db": "mongo-prod"})
+	assert.True(t, res)
+	assert.Nil(t, err)
+
+	r = MatchListRule{"host_name", []string{}}
+
+	// return false and no error if list of values is empty
+	res, err = r.Handle("test", map[string]string{"host_name": "apibox_456", "db": "mongo-prod"})
+	assert.False(t, res)
+	assert.Nil(t, err)
+
+}
+
+func TestRateRule(t *testing.T) {
+	t.Parallel()
+
+	// test normal sample rule (no properties) at different rates
+	// by calling Handle() 10,000 times and comparing actual rate
+	// to expected rate
+	testCases := []float64{1, 0, 0.01, 0.5, 0.8}
+	for _, rate := range testCases {
+		var iterations = 10000
+		var r = RateRule{Rate: rate}
+		count := 0
+		for i := 0; i < iterations; i++ {
+			match, err := r.Handle("test", map[string]string{})
+			assert.Nil(t, err)
+			if match {
+				count++
+			}
+		}
+
+		actualRate := float64(count) / float64(iterations)
+		assert.InDelta(t, rate, actualRate, 0.02)
+	}
+
+	//test rate_by (w/ property) by generating random multi-dimension props
+	//and memoizing their Enabled checks(), and confirming same results
+	//when running Enabled again. Also checks if actual rate ~= expected rate
+	type resultKey struct{ a, b int }
+	matches := 0
+	misses := 0
+	results := map[resultKey]bool{}
+	var r = RateRule{0.5, []string{"a", "b", "c"}}
+	for a := 0; a < 100; a++ {
+		for b := 0; b < 100; b++ {
+			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			match, err := r.Handle("test", props)
+			assert.Nil(t, err)
+			if match {
+				matches++
+			} else {
+				misses++
+			}
+			results[resultKey{a, b}] = match
+		}
+	}
+	assert.InDelta(t, misses, matches, 200)
+
+	for a := 0; a < 100; a++ {
+		for b := 0; b < 100; b++ {
+			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			match, err := r.Handle("test", props)
+			assert.Nil(t, err)
+			assert.Equal(t, results[resultKey{a, b}], match)
+		}
+	}
+
+	//results should depend on flag name
+	//try a different flag name and check the same properties. we expect 50% overlap
+	disagree := 0
+	for a := 0; a < 100; a++ {
+		for b := 0; b < 100; b++ {
+			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			match, err := r.Handle("test2", props)
+			assert.Nil(t, err)
+			if results[resultKey{a, b}] != match {
+				disagree++
+			}
+		}
+	}
+	assert.InDelta(t, 100*100/2, disagree, 200)
+
+	// If a tag is missing, that's an error
+	tags := map[string]string{"a": "foo"}
+	match, err := r.Handle("test", tags)
+	assert.False(t, match)
+	assert.Error(t, err)
+}
+
+type OnRule struct{}
+type OffRule struct{}
+
+func (r *OnRule) Handle(flag string, props map[string]string) (bool, error) {
+	return true, nil
+}
+
+func (r *OffRule) Handle(flag string, props map[string]string) (bool, error) {
+	return false, nil
+}
+
+type dummyRulesBackend struct{}
+
+func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
+	var flags = map[string]Flag{
+		"test1": Flag{
+			"test1",
+			true,
+			[]RuleInfo{
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test2": Flag{
+			"test2",
+			true,
+			[]RuleInfo{
+				{&OnRule{}, RuleOff, RuleOn},
+			},
+		},
+		"test3": Flag{
+			"test3",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test4": Flag{
+			"test4",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOn, RuleOff},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test5": Flag{
+			"test5",
+			true,
+			[]RuleInfo{
+				{&OnRule{}, RuleContinue, RuleOn},
+				{&OffRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test6": Flag{
+			"test6",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OffRule{}, RuleContinue, RuleOff},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test7": Flag{
+			"test7",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OnRule{}, RuleContinue, RuleOff},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test8": Flag{
+			"test8",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OnRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test9": Flag{
+			"test9",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOff, RuleContinue},
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OffRule{}, RuleOn, RuleOff},
+			},
+		},
+		"test10": Flag{
+			"test10",
+			true,
+			[]RuleInfo{
+				{&OffRule{}, RuleOn, RuleContinue},
+				{&OffRule{}, RuleOn, RuleOff},
+				{&OnRule{}, RuleContinue, RuleOff},
+			},
+		},
+		"test11": Flag{
+			"test11",
+			true,
+			[]RuleInfo{},
+		},
+		"test12": Flag{
+			"test12",
+			false,
+			[]RuleInfo{
+				{&OnRule{}, RuleOn, RuleOn},
+			},
+		},
+	}
+	return flags, time.Time{}, nil
+}
+
+func TestCascadingRules(t *testing.T) {
+	t.Parallel()
+
+	g, _ := testGoforit(DefaultInterval, &dummyRulesBackend{})
+	defer g.Close()
+
+	// test match on, miss off single rule
+	assert.True(t, g.Enabled(context.Background(), "test1", nil))
+
+	// test match off, miss on single rule
+	assert.False(t, g.Enabled(context.Background(), "test2", nil))
+
+	// test match on, miss continue
+	assert.True(t, g.Enabled(context.Background(), "test3", nil))
+
+	// test match on, miss off
+	assert.False(t, g.Enabled(context.Background(), "test4", nil))
+
+	// test match continue
+	assert.False(t, g.Enabled(context.Background(), "test5", nil))
+
+	// test 3 rules -- 2nd rule off
+	assert.False(t, g.Enabled(context.Background(), "test6", nil))
+
+	// test cascade to last rule (continue to last rule)
+	// must match both 2nd and 3rd rule
+	assert.True(t, g.Enabled(context.Background(), "test7", nil))
+
+	// test cascade to last rule (continue to last rule)
+	// must match either 2nd rule or 3rd rule, only 3rd on
+	assert.True(t, g.Enabled(context.Background(), "test8", nil))
+
+	// test cascade to last rule (continue to last rule)
+	// must match either 2nd or 3rd, all 3 off
+	assert.False(t, g.Enabled(context.Background(), "test9", nil))
+
+	// test default behavior is off if all rules are "continue"
+	assert.False(t, g.Enabled(context.Background(), "test10", nil))
+
+	// test default on if no rules and active = true
+	assert.True(t, g.Enabled(context.Background(), "test11", nil))
+
+	// test return false categorically if active = false
+	assert.False(t, g.Enabled(context.Background(), "test12", nil))
 }
 
 // dummyBackend lets us test the RefreshFlags
@@ -143,8 +413,8 @@ func TestRefresh(t *testing.T) {
 	backend := &dummyBackend{}
 	g, _ := testGoforit(10*time.Millisecond, backend)
 
-	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
-	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 
 	defer g.Close()
 
@@ -155,8 +425,8 @@ func TestRefresh(t *testing.T) {
 		<-time.After(10 * time.Millisecond)
 	}
 
-	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 }
 
 // BenchmarkEnabled runs a benchmark for a feature flag
@@ -168,7 +438,7 @@ func BenchmarkEnabled(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = g.Enabled(context.Background(), "go.stars.money")
+		_ = g.Enabled(context.Background(), "go.stars.money", nil)
 	}
 }
 
@@ -182,6 +452,58 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 	}
 }
 
+type dummyDefaultFlagsBackend struct{}
+
+func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error) {
+	var testFlag = Flag{
+		"test",
+		true,
+		[]RuleInfo{
+			{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOff, RuleContinue},
+			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
+			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
+		},
+	}
+	return map[string]Flag{"test": testFlag}, time.Time{}, nil
+}
+
+func TestDefaultTags(t *testing.T) {
+	t.Parallel()
+
+	const iterations = 100000
+	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{})
+	defer g.Close()
+
+	// if no properties passed, and no default tags added, then should return false
+	assert.False(t, g.Enabled(context.Background(), "test", nil))
+
+	// test match list rule by adding hostname to default tag
+	g.AddDefaultTags(map[string]string{"host_name": "apibox_123", "env": "prod"})
+	assert.True(t, g.Enabled(context.Background(), "test", nil))
+
+	// test overriding global default in local props map
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_789"}))
+
+	// if missing cluster+db, then rate rule should return false
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001"}))
+
+	// if only one of cluster and db, then rate rule should return false
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
+
+	// test combination of global tag and local props
+	g.AddDefaultTags(map[string]string{"cluster": "northwest-01"})
+	assert.True(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.True(t, len(lines) == 6)
+	for i, line := range lines {
+		if i%2 == 1 {
+			assert.Contains(t, line, "No property")
+			assert.Contains(t, line, "in properties map or default tags")
+		}
+	}
+}
+
 func TestOverride(t *testing.T) {
 	t.Parallel()
 
@@ -191,64 +513,64 @@ func TestOverride(t *testing.T) {
 	g.RefreshFlags(backend)
 
 	// Empty context gets values from backend.
-	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
-	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury"))
-	assert.False(t, g.Enabled(context.Background(), "go.extra"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(context.Background(), "go.extra", nil))
 
 	// Nil is equivalent to empty context.
-	assert.False(t, g.Enabled(nil, "go.sun.money"))
-	assert.True(t, g.Enabled(nil, "go.moon.mercury"))
-	assert.False(t, g.Enabled(nil, "go.extra"))
+	assert.False(t, g.Enabled(nil, "go.sun.money", nil))
+	assert.True(t, g.Enabled(nil, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(nil, "go.extra", nil))
 
 	// Can override to true in context.
 	ctx := context.Background()
 	ctx = Override(ctx, "go.sun.money", true)
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.True(t, g.Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, g.Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.True(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Can override to false.
 	ctx = Override(ctx, "go.moon.mercury", false)
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, g.Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Can override brand new flag.
 	ctx = Override(ctx, "go.extra", true)
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
-	assert.True(t, g.Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.True(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Can override an override.
 	ctx = Override(ctx, "go.extra", false)
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, g.Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 
 	// Separate contexts don't interfere with each other.
 	// This allows parallel tests that use feature flags.
 	ctx2 := Override(context.Background(), "go.extra", true)
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, g.Enabled(ctx, "go.extra"))
-	assert.False(t, g.Enabled(ctx2, "go.sun.money"))
-	assert.True(t, g.Enabled(ctx2, "go.moon.mercury"))
-	assert.True(t, g.Enabled(ctx2, "go.extra"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
+	assert.False(t, g.Enabled(ctx2, "go.sun.money", nil))
+	assert.True(t, g.Enabled(ctx2, "go.moon.mercury", nil))
+	assert.True(t, g.Enabled(ctx2, "go.extra", nil))
 
 	// Overrides apply to child contexts.
 	child := context.WithValue(ctx, "foo", "bar")
-	assert.True(t, g.Enabled(child, "go.sun.money"))
-	assert.False(t, g.Enabled(child, "go.moon.mercury"))
-	assert.False(t, g.Enabled(child, "go.extra"))
+	assert.True(t, g.Enabled(child, "go.sun.money", nil))
+	assert.False(t, g.Enabled(child, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(child, "go.extra", nil))
 
 	// Changes to child contexts don't affect parents.
 	child = Override(child, "go.moon.mercury", true)
-	assert.True(t, g.Enabled(child, "go.sun.money"))
-	assert.True(t, g.Enabled(child, "go.moon.mercury"))
-	assert.False(t, g.Enabled(child, "go.extra"))
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
-	assert.False(t, g.Enabled(ctx, "go.extra"))
+	assert.True(t, g.Enabled(child, "go.sun.money", nil))
+	assert.True(t, g.Enabled(child, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(child, "go.extra", nil))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "go.extra", nil))
 }
 
 func TestOverrideWithoutInit(t *testing.T) {
@@ -257,13 +579,13 @@ func TestOverrideWithoutInit(t *testing.T) {
 	g, _ := testGoforit(0, nil)
 
 	// Everything is false by default.
-	assert.False(t, g.Enabled(context.Background(), "go.sun.money"))
-	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury"))
+	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
+	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 
 	// Can override.
 	ctx := Override(context.Background(), "go.sun.money", true)
-	assert.True(t, g.Enabled(ctx, "go.sun.money"))
-	assert.False(t, g.Enabled(ctx, "go.moon.mercury"))
+	assert.True(t, g.Enabled(ctx, "go.sun.money", nil))
+	assert.False(t, g.Enabled(ctx, "go.moon.mercury", nil))
 }
 
 type dummyAgeBackend struct {
@@ -329,7 +651,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	defer g.Close()
 
 	for i := 0; i < 10; i++ {
-		g.Enabled(nil, "go.sun.money")
+		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
 
@@ -337,7 +659,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	g.Close()
 
 	for i := 0; i < 10; i++ {
-		g.Enabled(nil, "go.sun.money")
+		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
 
@@ -346,7 +668,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		v := values[i]
 		// Should be ~< 10ms
-		assert.InDelta(t, 0.005, v, 0.010)
+		assert.InDelta(t, 0.007, v, 0.015)
 	}
 
 	last := math.Inf(-1)
@@ -406,7 +728,7 @@ func TestStaleRefresh(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	for i := 0; i < 10; i++ {
-		g.Enabled(nil, "go.sun.money")
+		g.Enabled(nil, "go.sun.money", nil)
 	}
 
 	// Should see just one staleness warning
