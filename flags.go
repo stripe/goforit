@@ -48,8 +48,7 @@ type goforit struct {
 	// Unix time in nanos.
 	lastFlagRefreshTime int64
 
-	tagsMtx     sync.RWMutex
-	defaultTags map[string]string
+	defaultTags sync.Map
 
 	stats statsdClient
 
@@ -75,7 +74,6 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
 		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
 		logger:                log.New(os.Stderr, "[goforit] ", log.LstdFlags),
-		defaultTags:           map[string]string{},
 	}
 }
 
@@ -241,12 +239,11 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		return
 	}
 
-	var mergedProperties = map[string]string{}
-
-	for k, v := range g.getDefaultTags() {
-		mergedProperties[k] = v
-	}
-
+	mergedProperties := make(map[string]string)
+	g.defaultTags.Range(func(k, v interface{}) bool {
+		mergedProperties[k.(string)] = v.(string)
+		return true
+	})
 	for k, v := range properties {
 		mergedProperties[k] = v
 	}
@@ -279,16 +276,6 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	}
 	enabled = false
 	return
-}
-
-func (g *goforit) getDefaultTags() map[string]string {
-	g.tagsMtx.RLock()
-	defer g.tagsMtx.RUnlock()
-	var temp = map[string]string{}
-	for k, v := range g.defaultTags {
-		temp[k] = v
-	}
-	return temp
 }
 
 func getProperty(props map[string]string, prop string) (string, error) {
@@ -409,10 +396,8 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 }
 
 func (g *goforit) AddDefaultTags(tags map[string]string) {
-	g.tagsMtx.Lock()
-	defer g.tagsMtx.Unlock()
 	for k, v := range tags {
-		g.defaultTags[k] = v
+		g.defaultTags.Store(k, v)
 	}
 }
 
