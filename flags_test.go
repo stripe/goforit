@@ -235,23 +235,23 @@ func (r *OffRule) Handle(flag string, props map[string]string) (bool, error) {
 
 type dummyRulesBackend struct{}
 
-func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
-	var flags = map[string]Flag{
-		"test1": Flag{
+func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
+	var flags = []Flag{
+		Flag{
 			"test1",
 			true,
 			[]RuleInfo{
 				{&OnRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test2": Flag{
+		Flag{
 			"test2",
 			true,
 			[]RuleInfo{
 				{&OnRule{}, RuleOff, RuleOn},
 			},
 		},
-		"test3": Flag{
+		Flag{
 			"test3",
 			true,
 			[]RuleInfo{
@@ -259,7 +259,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test4": Flag{
+		Flag{
 			"test4",
 			true,
 			[]RuleInfo{
@@ -267,7 +267,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test5": Flag{
+		Flag{
 			"test5",
 			true,
 			[]RuleInfo{
@@ -275,7 +275,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test6": Flag{
+		Flag{
 			"test6",
 			true,
 			[]RuleInfo{
@@ -284,7 +284,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test7": Flag{
+		Flag{
 			"test7",
 			true,
 			[]RuleInfo{
@@ -293,7 +293,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test8": Flag{
+		Flag{
 			"test8",
 			true,
 			[]RuleInfo{
@@ -302,7 +302,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test9": Flag{
+		Flag{
 			"test9",
 			true,
 			[]RuleInfo{
@@ -311,7 +311,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleOff},
 			},
 		},
-		"test10": Flag{
+		Flag{
 			"test10",
 			true,
 			[]RuleInfo{
@@ -320,12 +320,12 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleContinue, RuleOff},
 			},
 		},
-		"test11": Flag{
+		Flag{
 			"test11",
 			true,
 			[]RuleInfo{},
 		},
-		"test12": Flag{
+		Flag{
 			"test12",
 			false,
 			[]RuleInfo{
@@ -390,13 +390,13 @@ type dummyBackend struct {
 	refreshedCount int
 }
 
-func (b *dummyBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b *dummyBackend) Refresh() ([]Flag, time.Time, error) {
 	defer func() {
 		b.refreshedCount++
 	}()
 
 	if b.refreshedCount == 0 {
-		return map[string]Flag{}, time.Time{}, nil
+		return []Flag{}, time.Time{}, nil
 	}
 
 	f, err := os.Open(filepath.Join("fixtures", "flags_example.csv"))
@@ -457,7 +457,7 @@ func BenchmarkEnabled100(b *testing.B) {
 
 // assertFlagsEqual is a helper function for asserting
 // that two maps of flags are equal
-func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
+func assertFlagsEqual(t *testing.T, expected, actual []Flag) {
 	assert.Equal(t, len(expected), len(actual))
 
 	for k, v := range expected {
@@ -467,7 +467,7 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 
 type dummyDefaultFlagsBackend struct{}
 
-func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b *dummyDefaultFlagsBackend) Refresh() ([]Flag, time.Time, error) {
 	var testFlag = Flag{
 		"test",
 		true,
@@ -477,7 +477,7 @@ func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error)
 			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
 		},
 	}
-	return map[string]Flag{"test": testFlag}, time.Time{}, nil
+	return []Flag{testFlag}, time.Time{}, nil
 }
 
 func TestDefaultTags(t *testing.T) {
@@ -606,10 +606,10 @@ type dummyAgeBackend struct {
 	mtx sync.RWMutex
 }
 
-func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b *dummyAgeBackend) Refresh() ([]Flag, time.Time, error) {
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
-	return map[string]Flag{}, b.t, nil
+	return []Flag{}, b.t, nil
 }
 
 // Test to see proper monitoring of age of the flags dump

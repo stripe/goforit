@@ -51,7 +51,7 @@ func TestParseFlagsCSV(t *testing.T) {
 
 			flags, _, err := parseFlagsCSV(f)
 
-			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
+			assert.Equal(t, tc.Expected, flags)
 		})
 	}
 }
@@ -100,7 +100,7 @@ func TestParseFlagsJSON(t *testing.T) {
 
 			flags, _, err := parseFlagsJSON(f)
 
-			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
+			assert.Equal(t, tc.Expected, flags)
 		})
 	}
 }
