@@ -12,6 +12,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -35,9 +36,11 @@ type goforit struct {
 	stalenessMtx       sync.RWMutex
 	stalenessThreshold time.Duration
 
-	flagsMtx            sync.RWMutex
-	flags               map[string]Flag
-	lastFlagRefreshTime time.Time
+	flagsMtx sync.RWMutex
+	flags    map[string]Flag
+
+	// Unix time in nanos.
+	lastFlagRefreshTime int64
 
 	tagsMtx     sync.RWMutex
 	defaultTags map[string]string
@@ -164,13 +167,15 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 // enabled. It returns false if no flag with the specified
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
-	var lastRefreshTime time.Time
 	defer func() {
 		var gauge float64
 		if enabled {
 			gauge = 1
 		}
 		g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
+		last := atomic.LoadInt64(&g.lastFlagRefreshTime)
+		// time.Duration is conveniently measured in nanoseconds.
+		lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
 		g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", .01,
 			"Refresh cycle has not run in %s, past our threshold (%s)", true)
 	}()
@@ -191,7 +196,6 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		g.logger.Printf("[goforit] empty flags map")
 		return
 	}
-	lastRefreshTime = g.lastFlagRefreshTime
 	flag := g.flags[name]
 
 	// if flag is inactive, always return false
@@ -323,6 +327,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 		g.logger.Printf("Error refreshing flags: %s", err)
 		return
 	}
+	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
 
 	fmap := map[string]Flag{}
 	for _, flag := range refreshedFlags {
@@ -335,7 +340,6 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	// which are protected by the mutex
 	g.flagsMtx.Lock()
 	g.flags = fmap
-	g.lastFlagRefreshTime = time.Now()
 	g.flagsMtx.Unlock()
 
 	return
