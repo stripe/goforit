@@ -429,9 +429,9 @@ func TestRefresh(t *testing.T) {
 	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 }
 
-// BenchmarkEnabled runs a benchmark for a feature flag
+// BenchmarkEnabled50 runs a benchmark for a feature flag
 // that is enabled for 50% of operations.
-func BenchmarkEnabled(b *testing.B) {
+func BenchmarkEnabled50(b *testing.B) {
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
 	g, _ := testGoforit(10*time.Millisecond, backend)
 	defer g.Close()
@@ -439,6 +439,19 @@ func BenchmarkEnabled(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = g.Enabled(context.Background(), "go.stars.money", nil)
+	}
+}
+
+// BenchmarkEnabled100 runs a benchmark for a feature flag
+// that is enabled for 100% of operations.
+func BenchmarkEnabled100(b *testing.B) {
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	g, _ := testGoforit(10*time.Millisecond, backend)
+	defer g.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = g.Enabled(context.Background(), "go.moon.mercury", nil)
 	}
 }
 
