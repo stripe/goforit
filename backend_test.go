@@ -33,7 +33,7 @@ func TestParseFlagsCSV(t *testing.T) {
 				{
 					"go.moon.mercury",
 					true,
-					[]RuleInfo{{&RateRule{Rate: 1}, RuleOn, RuleOff}},
+					nil,
 					nil,
 				},
 				{

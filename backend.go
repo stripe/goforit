@@ -143,9 +143,11 @@ func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 		f := Flag{
 			Name:   name,
 			Active: true,
-			Rules: []RuleInfo{
+		}
+		if rate != 1 {
+			f.Rules = []RuleInfo{
 				{&RateRule{Rate: rate}, RuleOn, RuleOff},
-			},
+			}
 		}
 		flags = append(flags, f)
 	}
