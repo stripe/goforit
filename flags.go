@@ -22,6 +22,8 @@ const statsdAddress = "127.0.0.1:8200"
 
 const lastAssertInterval = 5 * time.Minute
 
+const enabledTickerInterval = 10 * time.Second
+
 // An interface reflecting the parts of statsd that we need, so we can mock it
 type statsdClient interface {
 	Histogram(string, float64, []string, float64) error
@@ -38,6 +40,10 @@ type goforit struct {
 
 	flagsMtx sync.RWMutex
 	flags    map[string]Flag
+
+	enabledTickerInterval time.Duration
+	// If a flag doesn't exist, this shared ticker will be used.
+	enabledTicker *time.Ticker
 
 	// Unix time in nanos.
 	lastFlagRefreshTime int64
@@ -60,20 +66,22 @@ type goforit struct {
 
 const DefaultInterval = 30 * time.Second
 
-func newWithoutInit() *goforit {
+func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 	stats, _ := statsd.New(statsdAddress)
 	return &goforit{
-		stats:       stats,
-		flags:       map[string]Flag{},
-		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger:      log.New(os.Stderr, "[goforit] ", log.LstdFlags),
-		defaultTags: map[string]string{},
+		stats: stats,
+		flags: map[string]Flag{},
+		enabledTickerInterval: enabledTickerInterval,
+		enabledTicker:         time.NewTicker(enabledTickerInterval),
+		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
+		logger:                log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		defaultTags:           map[string]string{},
 	}
 }
 
 // New creates a new goforit
 func New(interval time.Duration, backend Backend) *goforit {
-	g := newWithoutInit()
+	g := newWithoutInit(enabledTickerInterval)
 	g.init(interval, backend)
 	return g
 }
@@ -85,9 +93,22 @@ func (g *goforit) rand() float64 {
 }
 
 type Flag struct {
-	Name   string
-	Active bool
-	Rules  []RuleInfo
+	Name          string
+	Active        bool
+	Rules         []RuleInfo
+	enabledTicker *time.Ticker
+}
+
+func (f Flag) Equal(o Flag) bool {
+	if f.Name != o.Name || f.Active != o.Active || len(f.Rules) != len(o.Rules) {
+		return false
+	}
+	for i := 0; i < len(f.Rules); i++ {
+		if f.Rules[i] != o.Rules[i] {
+			return false
+		}
+	}
+	return true
 }
 
 type RuleAction string
@@ -162,23 +183,43 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 	g.logger.Printf(msg, staleness, thresh)
 }
 
+func (g *goforit) flag(name string) (Flag, bool) {
+	g.flagsMtx.RLock()
+	defer g.flagsMtx.RUnlock()
+	flag, ok := g.flags[name]
+	return flag, ok
+}
+
 // Enabled returns a boolean indicating
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
-	defer func() {
-		var gauge float64
-		if enabled {
-			gauge = 1
-		}
-		g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, .1)
-		last := atomic.LoadInt64(&g.lastFlagRefreshTime)
-		// time.Duration is conveniently measured in nanoseconds.
-		lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
-		g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", .01,
-			"Refresh cycle has not run in %s, past our threshold (%s)", true)
-	}()
+	enabled = false
+	flag, ok := g.flag(name)
+	var tickerC <-chan time.Time
+	if ok {
+		tickerC = flag.enabledTicker.C
+	} else {
+		tickerC = g.enabledTicker.C
+	}
+
+	select {
+	case <-tickerC:
+		defer func() {
+			var gauge float64
+			if enabled {
+				gauge = 1
+			}
+			g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, 1)
+			last := atomic.LoadInt64(&g.lastFlagRefreshTime)
+			// time.Duration is conveniently measured in nanoseconds.
+			lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
+			g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", 1,
+				"Refresh cycle has not run in %s, past our threshold (%s)", true)
+		}()
+	default:
+	}
 
 	// Check for an override.
 	if ctx != nil {
@@ -188,15 +229,6 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 			}
 		}
 	}
-
-	g.flagsMtx.RLock()
-	defer g.flagsMtx.RUnlock()
-	enabled = false
-	if g.flags == nil {
-		g.logger.Printf("[goforit] empty flags map")
-		return
-	}
-	flag := g.flags[name]
 
 	// if flag is inactive, always return false
 	if !flag.Active {
@@ -329,18 +361,43 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	}
 	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
 
-	fmap := map[string]Flag{}
-	for _, flag := range refreshedFlags {
-		fmap[flag.Name] = flag
+	deleted := make(map[string]bool)
+	g.flagsMtx.RLock()
+	for name, _ := range g.flags {
+		deleted[name] = true
 	}
+	g.flagsMtx.RUnlock()
+
+	for _, flag := range refreshedFlags {
+		delete(deleted, flag.Name)
+		oldFlag, ok := g.flag(flag.Name)
+		if ok {
+			// Avoid churning the map if the flag hasn't changed.
+			if !oldFlag.Equal(flag) {
+				flag.enabledTicker = oldFlag.enabledTicker
+				g.flagsMtx.Lock()
+				g.flags[flag.Name] = flag
+				g.flagsMtx.Unlock()
+			}
+		} else {
+			flag.enabledTicker = time.NewTicker(g.enabledTickerInterval)
+			g.flagsMtx.Lock()
+			g.flags[flag.Name] = flag
+			g.flagsMtx.Unlock()
+		}
+	}
+
+	for name, _ := range deleted {
+		var ticker *time.Ticker
+		g.flagsMtx.Lock()
+		ticker = g.flags[name].enabledTicker
+		delete(g.flags, name)
+		g.flagsMtx.Unlock()
+		ticker.Stop()
+	}
+
 	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
 		"Backend is stale (%s) past our threshold (%s)", false)
-
-	// update the package-level flags
-	// which are protected by the mutex
-	g.flagsMtx.Lock()
-	g.flags = fmap
-	g.flagsMtx.Unlock()
 
 	return
 }
@@ -401,6 +458,14 @@ func (g *goforit) Close() error {
 	if g.ticker != nil {
 		g.ticker.Stop()
 		g.ticker = nil
+
+		g.flagsMtx.RLock()
+		defer g.flagsMtx.RUnlock()
+		for _, flag := range g.flags {
+			flag.enabledTicker.Stop()
+		}
+
+		g.enabledTicker.Stop()
 	}
 	return nil
 }
