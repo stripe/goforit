@@ -147,6 +147,16 @@ func (g *goforit) getStalenessThreshold() time.Duration {
 	return g.stalenessThreshold
 }
 
+func (g *goforit) logStaleCheck() bool {
+	g.lastAssertMtx.Lock()
+	defer g.lastAssertMtx.Unlock()
+	if time.Since(g.lastAssert) < lastAssertInterval {
+		return false
+	}
+	g.lastAssert = time.Now()
+	return true
+}
+
 // Check if a time is stale.
 func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg string, checkLastAssert bool) {
 	if t.IsZero() {
@@ -166,17 +176,10 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 	if staleness <= thresh {
 		return
 	}
-
-	if checkLastAssert {
-		// Don't log too often!
-		g.lastAssertMtx.Lock()
-		defer g.lastAssertMtx.Unlock()
-		if time.Since(g.lastAssert) < lastAssertInterval {
-			return
-		}
-		g.lastAssert = time.Now()
+	// Don't log too often!
+	if !checkLastAssert || g.logStaleCheck() {
+		g.logger.Printf(msg, staleness, thresh)
 	}
-	g.logger.Printf(msg, staleness, thresh)
 }
 
 // Enabled returns a boolean indicating
