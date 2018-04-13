@@ -235,6 +235,12 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		return
 	}
 
+	// if there are no rules, but flag is active, always return true
+	if len(flag.Rules) == 0 {
+		enabled = true
+		return
+	}
+
 	var mergedProperties = map[string]string{}
 
 	for k, v := range g.getDefaultTags() {
@@ -243,12 +249,6 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 
 	for k, v := range properties {
 		mergedProperties[k] = v
-	}
-
-	// if there are no rules, but flag is active, always return true
-	if len(flag.Rules) == 0 {
-		enabled = true
-		return
 	}
 
 	for _, r := range flag.Rules {
