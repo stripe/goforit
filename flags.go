@@ -38,8 +38,7 @@ type goforit struct {
 	stalenessMtx       sync.RWMutex
 	stalenessThreshold time.Duration
 
-	flagsMtx sync.RWMutex
-	flags    map[string]Flag
+	flags sync.Map
 
 	enabledTickerInterval time.Duration
 	// If a flag doesn't exist, this shared ticker will be used.
@@ -69,7 +68,6 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 	stats, _ := statsd.New(statsdAddress)
 	return &goforit{
 		stats: stats,
-		flags: map[string]Flag{},
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
 		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -181,22 +179,17 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 	g.logger.Printf(msg, staleness, thresh)
 }
 
-func (g *goforit) flag(name string) (Flag, bool) {
-	g.flagsMtx.RLock()
-	defer g.flagsMtx.RUnlock()
-	flag, ok := g.flags[name]
-	return flag, ok
-}
-
 // Enabled returns a boolean indicating
 // whether or not the flag should be considered
 // enabled. It returns false if no flag with the specified
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
-	flag, ok := g.flag(name)
+	f, ok := g.flags.Load(name)
+	var flag Flag
 	var tickerC <-chan time.Time
 	if ok {
+		flag = f.(Flag)
 		tickerC = flag.enabledTicker.C
 	} else {
 		tickerC = g.enabledTicker.C
@@ -349,38 +342,32 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
 
 	deleted := make(map[string]bool)
-	g.flagsMtx.RLock()
-	for name, _ := range g.flags {
-		deleted[name] = true
-	}
-	g.flagsMtx.RUnlock()
+	g.flags.Range(func(name, flag interface{}) bool {
+		deleted[name.(string)] = true
+		return true
+	})
 
 	for _, flag := range refreshedFlags {
 		delete(deleted, flag.Name)
-		oldFlag, ok := g.flag(flag.Name)
+		oldFlag, ok := g.flags.Load(flag.Name)
 		if ok {
 			// Avoid churning the map if the flag hasn't changed.
-			if !oldFlag.Equal(flag) {
-				flag.enabledTicker = oldFlag.enabledTicker
-				g.flagsMtx.Lock()
-				g.flags[flag.Name] = flag
-				g.flagsMtx.Unlock()
+			if !oldFlag.(Flag).Equal(flag) {
+				flag.enabledTicker = oldFlag.(Flag).enabledTicker
+				g.flags.Store(flag.Name, flag)
 			}
 		} else {
 			flag.enabledTicker = time.NewTicker(g.enabledTickerInterval)
-			g.flagsMtx.Lock()
-			g.flags[flag.Name] = flag
-			g.flagsMtx.Unlock()
+			g.flags.Store(flag.Name, flag)
 		}
 	}
 
 	for name, _ := range deleted {
-		var ticker *time.Ticker
-		g.flagsMtx.Lock()
-		ticker = g.flags[name].enabledTicker
-		delete(g.flags, name)
-		g.flagsMtx.Unlock()
-		ticker.Stop()
+		f, ok := g.flags.Load(name)
+		if ok {
+			f.(Flag).enabledTicker.Stop()
+			g.flags.Delete(name)
+		}
 	}
 
 	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
@@ -444,11 +431,10 @@ func (g *goforit) Close() error {
 		g.ticker.Stop()
 		g.ticker = nil
 
-		g.flagsMtx.RLock()
-		defer g.flagsMtx.RUnlock()
-		for _, flag := range g.flags {
-			flag.enabledTicker.Stop()
-		}
+		g.flags.Range(func(k, v interface{}) bool {
+			v.(Flag).enabledTicker.Stop()
+			return true
+		})
 
 		g.enabledTicker.Stop()
 	}
