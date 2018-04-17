@@ -28,16 +28,19 @@ func TestParseFlagsCSV(t *testing.T) {
 					"go.sun.money",
 					true,
 					[]RuleInfo{{&RateRule{Rate: 0}, RuleOn, RuleOff}},
+					nil,
 				},
 				{
 					"go.moon.mercury",
 					true,
-					[]RuleInfo{{&RateRule{Rate: 1}, RuleOn, RuleOff}},
+					nil,
+					nil,
 				},
 				{
 					"go.stars.money",
 					true,
 					[]RuleInfo{{&RateRule{Rate: 0.5}, RuleOn, RuleOff}},
+					nil,
 				},
 			},
 		},
@@ -51,7 +54,7 @@ func TestParseFlagsCSV(t *testing.T) {
 
 			flags, _, err := parseFlagsCSV(f)
 
-			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
+			assert.Equal(t, tc.Expected, flags)
 		})
 	}
 }
@@ -80,6 +83,7 @@ func TestParseFlagsJSON(t *testing.T) {
 						{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOn, RuleContinue},
 						{&RateRule{0.01, []string{"cluster", "db"}}, RuleOn, RuleOff},
 					},
+					nil,
 				},
 				{
 					"go.sun.mercury",
@@ -87,6 +91,7 @@ func TestParseFlagsJSON(t *testing.T) {
 					[]RuleInfo{
 						{&RateRule{Rate: 0.5}, RuleOn, RuleOff},
 					},
+					nil,
 				},
 			},
 		},
@@ -100,7 +105,7 @@ func TestParseFlagsJSON(t *testing.T) {
 
 			flags, _, err := parseFlagsJSON(f)
 
-			assertFlagsEqual(t, flagsToMap(tc.Expected), flags)
+			assert.Equal(t, tc.Expected, flags)
 		})
 	}
 }
@@ -112,10 +117,13 @@ func TestMultipleDefinitions(t *testing.T) {
 	const lastValue = 0.7
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
-	g, _ := testGoforit(0, backend)
+	g, _ := testGoforit(0, backend, enabledTickerInterval)
 	g.RefreshFlags(backend)
 
-	flag := g.flags[repeatedFlag]
-	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
+	f, ok := g.flags.Load(repeatedFlag)
+	assert.True(t, ok)
+	flag := f.(Flag)
+	flag.enabledTicker = nil // we don't compare about comparing this
+	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}, nil})
 
 }

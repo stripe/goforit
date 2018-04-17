@@ -13,7 +13,7 @@ import (
 type Backend interface {
 	// Refresh returns a new set of flags.
 	// It also returns the age of these flags, or an empty time if no age is known.
-	Refresh() (map[string]Flag, time.Time, error)
+	Refresh() ([]Flag, time.Time, error)
 }
 
 type csvFileBackend struct {
@@ -100,7 +100,7 @@ func (ri *RuleInfo) UnmarshalJSON(buf []byte) error {
 	return json.Unmarshal(buf, ri.Rule)
 }
 
-func readFile(file string, backend string, parse func(io.Reader) (map[string]Flag, time.Time, error)) (map[string]Flag, time.Time, error) {
+func readFile(file string, backend string, parse func(io.Reader) ([]Flag, time.Time, error)) ([]Flag, time.Time, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -109,23 +109,15 @@ func readFile(file string, backend string, parse func(io.Reader) (map[string]Fla
 	return parse(f)
 }
 
-func (b jsonFileBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b jsonFileBackend) Refresh() ([]Flag, time.Time, error) {
 	return readFile(b.filename, "json", parseFlagsJSON)
 }
 
-func (b csvFileBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b csvFileBackend) Refresh() ([]Flag, time.Time, error) {
 	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
-func flagsToMap(flags []Flag) map[string]Flag {
-	flagsMap := map[string]Flag{}
-	for _, flag := range flags {
-		flagsMap[flag.Name] = flag
-	}
-	return flagsMap
-}
-
-func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
+func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 	// every row is guaranteed to have 2 fields
 	const FieldsPerRecord = 2
 
@@ -138,7 +130,7 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 		return nil, time.Time{}, err
 	}
 
-	flags := map[string]Flag{}
+	flags := make([]Flag, 0, len(rows))
 	for _, row := range rows {
 		name := row[0]
 
@@ -148,19 +140,28 @@ func parseFlagsCSV(r io.Reader) (map[string]Flag, time.Time, error) {
 			rate = 0
 		}
 
-		flags[name] = Flag{Name: name, Active: true, Rules: []RuleInfo{{&RateRule{Rate: rate}, RuleOn, RuleOff}}}
+		f := Flag{
+			Name:   name,
+			Active: true,
+		}
+		if rate != 1 {
+			f.Rules = []RuleInfo{
+				{&RateRule{Rate: rate}, RuleOn, RuleOff},
+			}
+		}
+		flags = append(flags, f)
 	}
 	return flags, time.Time{}, nil
 }
 
-func parseFlagsJSON(r io.Reader) (map[string]Flag, time.Time, error) {
+func parseFlagsJSON(r io.Reader) ([]Flag, time.Time, error) {
 	dec := json.NewDecoder(r)
 	var v JSONFormat
 	err := dec.Decode(&v)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	return flagsToMap(v.Flags), time.Unix(int64(v.UpdatedTime), 0), nil
+	return v.Flags, time.Unix(int64(v.UpdatedTime), 0), nil
 }
 
 // BackendFromFile is a helper function that creates a valid

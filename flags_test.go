@@ -3,6 +3,7 @@ package goforit
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -59,8 +60,8 @@ func (m *mockStatsd) getHistogramValues(name string) []float64 {
 
 // Build a goforit for testing
 // Also return the log output
-func testGoforit(interval time.Duration, backend Backend) (*goforit, *bytes.Buffer) {
-	g := newWithoutInit()
+func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration) (*goforit, *bytes.Buffer) {
+	g := newWithoutInit(enabledTickerInterval)
 	g.rnd = rand.New(rand.NewSource(seed))
 	var buf bytes.Buffer
 	g.logger = log.New(&buf, "", 9)
@@ -91,7 +92,7 @@ func TestEnabled(t *testing.T) {
 	const iterations = 100000
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit(DefaultInterval, backend)
+	g, _ := testGoforit(DefaultInterval, backend, enabledTickerInterval)
 	defer g.Close()
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
@@ -235,47 +236,52 @@ func (r *OffRule) Handle(flag string, props map[string]string) (bool, error) {
 
 type dummyRulesBackend struct{}
 
-func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
-	var flags = map[string]Flag{
-		"test1": Flag{
+func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
+	var flags = []Flag{
+		Flag{
 			"test1",
 			true,
 			[]RuleInfo{
 				{&OnRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test2": Flag{
+		Flag{
 			"test2",
 			true,
 			[]RuleInfo{
 				{&OnRule{}, RuleOff, RuleOn},
 			},
+			nil,
 		},
-		"test3": Flag{
+		Flag{
 			"test3",
 			true,
 			[]RuleInfo{
 				{&OffRule{}, RuleOn, RuleContinue},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test4": Flag{
+		Flag{
 			"test4",
 			true,
 			[]RuleInfo{
 				{&OffRule{}, RuleOn, RuleOff},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test5": Flag{
+		Flag{
 			"test5",
 			true,
 			[]RuleInfo{
 				{&OnRule{}, RuleContinue, RuleOn},
 				{&OffRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test6": Flag{
+		Flag{
 			"test6",
 			true,
 			[]RuleInfo{
@@ -283,8 +289,9 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OffRule{}, RuleContinue, RuleOff},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test7": Flag{
+		Flag{
 			"test7",
 			true,
 			[]RuleInfo{
@@ -292,8 +299,9 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OnRule{}, RuleContinue, RuleOff},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test8": Flag{
+		Flag{
 			"test8",
 			true,
 			[]RuleInfo{
@@ -301,8 +309,9 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleContinue},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test9": Flag{
+		Flag{
 			"test9",
 			true,
 			[]RuleInfo{
@@ -310,8 +319,9 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleContinue},
 				{&OffRule{}, RuleOn, RuleOff},
 			},
+			nil,
 		},
-		"test10": Flag{
+		Flag{
 			"test10",
 			true,
 			[]RuleInfo{
@@ -319,18 +329,21 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleOff},
 				{&OnRule{}, RuleContinue, RuleOff},
 			},
+			nil,
 		},
-		"test11": Flag{
+		Flag{
 			"test11",
 			true,
 			[]RuleInfo{},
+			nil,
 		},
-		"test12": Flag{
+		Flag{
 			"test12",
 			false,
 			[]RuleInfo{
 				{&OnRule{}, RuleOn, RuleOn},
 			},
+			nil,
 		},
 	}
 	return flags, time.Time{}, nil
@@ -339,7 +352,7 @@ func (b *dummyRulesBackend) Refresh() (map[string]Flag, time.Time, error) {
 func TestCascadingRules(t *testing.T) {
 	t.Parallel()
 
-	g, _ := testGoforit(DefaultInterval, &dummyRulesBackend{})
+	g, _ := testGoforit(DefaultInterval, &dummyRulesBackend{}, enabledTickerInterval)
 	defer g.Close()
 
 	// test match on, miss off single rule
@@ -390,13 +403,13 @@ type dummyBackend struct {
 	refreshedCount int
 }
 
-func (b *dummyBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b *dummyBackend) Refresh() ([]Flag, time.Time, error) {
 	defer func() {
 		b.refreshedCount++
 	}()
 
 	if b.refreshedCount == 0 {
-		return map[string]Flag{}, time.Time{}, nil
+		return []Flag{}, time.Time{}, nil
 	}
 
 	f, err := os.Open(filepath.Join("fixtures", "flags_example.csv"))
@@ -411,7 +424,7 @@ func TestRefresh(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyBackend{}
-	g, _ := testGoforit(10*time.Millisecond, backend)
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
 	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
@@ -429,11 +442,56 @@ func TestRefresh(t *testing.T) {
 	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 }
 
-// BenchmarkEnabled runs a benchmark for a feature flag
-// that is enabled for 50% of operations.
-func BenchmarkEnabled(b *testing.B) {
+func TestRefreshTicker(t *testing.T) {
+	t.Parallel()
+
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit(10*time.Millisecond, backend)
+	g, _ := testGoforit(10*time.Second, backend, enabledTickerInterval)
+	defer g.Close()
+
+	earthTicker := time.NewTicker(time.Nanosecond)
+	g.flags.Store("go.earth.money", Flag{"go.earth.money", true, nil, earthTicker})
+	f, ok := g.flags.Load("go.moon.mercury")
+	assert.True(t, ok)
+	moonTicker := f.(Flag).enabledTicker
+	g.flags.Delete("go.stars.money")
+	// Give tickers time to run.
+	time.Sleep(time.Millisecond)
+
+	g.RefreshFlags(backend)
+
+	_, ok = g.flags.Load("go.sun.money")
+	assert.True(t, ok)
+	_, ok = g.flags.Load("go.moon.mercury")
+	assert.True(t, ok)
+	_, ok = g.flags.Load("go.stars.money")
+	assert.True(t, ok)
+	_, ok = g.flags.Load("go.earth.money")
+	assert.False(t, ok)
+
+	// Make sure that the ticker was preserved.
+	f, ok = g.flags.Load("go.moon.mercury")
+	assert.True(t, ok)
+	assert.Equal(t, moonTicker, f.(Flag).enabledTicker)
+
+	// Make sure that the deleted flag's ticker was stopped.
+	_, ok = <-earthTicker.C
+	assert.True(t, ok)
+	// If the ticker wasn't deleted, make sure it can run again.
+	time.Sleep(time.Millisecond)
+	select {
+	case _, ok = <-earthTicker.C:
+		// If the ticker was stopped, there's no way we'd get a 2nd tick.
+		assert.False(t, ok)
+	default:
+	}
+}
+
+// BenchmarkEnabled50 runs a benchmark for a feature flag
+// that is enabled for 50% of operations.
+func BenchmarkEnabled50(b *testing.B) {
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()
 
 	b.ResetTimer()
@@ -442,9 +500,22 @@ func BenchmarkEnabled(b *testing.B) {
 	}
 }
 
+// BenchmarkEnabled100 runs a benchmark for a feature flag
+// that is enabled for 100% of operations.
+func BenchmarkEnabled100(b *testing.B) {
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	defer g.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = g.Enabled(context.Background(), "go.moon.mercury", nil)
+	}
+}
+
 // assertFlagsEqual is a helper function for asserting
 // that two maps of flags are equal
-func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
+func assertFlagsEqual(t *testing.T, expected, actual []Flag) {
 	assert.Equal(t, len(expected), len(actual))
 
 	for k, v := range expected {
@@ -454,7 +525,7 @@ func assertFlagsEqual(t *testing.T, expected, actual map[string]Flag) {
 
 type dummyDefaultFlagsBackend struct{}
 
-func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b *dummyDefaultFlagsBackend) Refresh() ([]Flag, time.Time, error) {
 	var testFlag = Flag{
 		"test",
 		true,
@@ -463,15 +534,16 @@ func (b *dummyDefaultFlagsBackend) Refresh() (map[string]Flag, time.Time, error)
 			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
 			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
 		},
+		time.NewTicker(time.Second),
 	}
-	return map[string]Flag{"test": testFlag}, time.Time{}, nil
+	return []Flag{testFlag}, time.Time{}, nil
 }
 
 func TestDefaultTags(t *testing.T) {
 	t.Parallel()
 
 	const iterations = 100000
-	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{})
+	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{}, enabledTickerInterval)
 	defer g.Close()
 
 	// if no properties passed, and no default tags added, then should return false
@@ -508,7 +580,7 @@ func TestOverride(t *testing.T) {
 	t.Parallel()
 
 	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit(10*time.Millisecond, backend)
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()
 	g.RefreshFlags(backend)
 
@@ -576,7 +648,7 @@ func TestOverride(t *testing.T) {
 func TestOverrideWithoutInit(t *testing.T) {
 	t.Parallel()
 
-	g, _ := testGoforit(0, nil)
+	g, _ := testGoforit(0, nil, enabledTickerInterval)
 
 	// Everything is false by default.
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
@@ -593,10 +665,16 @@ type dummyAgeBackend struct {
 	mtx sync.RWMutex
 }
 
-func (b *dummyAgeBackend) Refresh() (map[string]Flag, time.Time, error) {
+func (b *dummyAgeBackend) Refresh() ([]Flag, time.Time, error) {
+	var testFlag = Flag{
+		"go.sun.money",
+		true,
+		[]RuleInfo{},
+		time.NewTicker(time.Nanosecond),
+	}
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
-	return map[string]Flag{}, b.t, nil
+	return []Flag{testFlag}, b.t, nil
 }
 
 // Test to see proper monitoring of age of the flags dump
@@ -604,7 +682,7 @@ func TestCacheFileMetric(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	g, _ := testGoforit(10*time.Millisecond, backend)
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()
 
 	time.Sleep(50 * time.Millisecond)
@@ -647,19 +725,28 @@ func TestRefreshCycleMetric(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	g, _ := testGoforit(10*time.Millisecond, backend)
+	g, _ := testGoforit(10*time.Millisecond, backend, time.Second)
 	defer g.Close()
+
+	tickerC := make(chan time.Time, 1)
+	f, _ := g.flags.Load("go.sun.money")
+	flag := f.(Flag)
+	flag.enabledTicker = &time.Ticker{C: tickerC}
+	g.flags.Store("go.sun.money", flag)
 
 	iters := 30
 	for i := 0; i < iters; i++ {
+		tickerC <- time.Now()
 		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
 
 	// want to stop ticker to simulate Refresh() hanging
-	g.Close()
+	g.ticker.Stop()
+	time.Sleep(3 * time.Millisecond)
 
 	for i := 0; i < iters; i++ {
+		tickerC <- time.Now()
 		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
@@ -676,7 +763,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	large := 0
 	for i := iters; i < 2*iters; i++ {
 		v := values[i]
-		assert.True(t, v > last)
+		assert.True(t, v > last, fmt.Sprintf("%d: %v: %v", i, v, values))
 		last = v
 		if v > 0.03 {
 			// At least some should be large now, since we're not refreshing
@@ -690,7 +777,7 @@ func TestStaleFile(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
-	g, buf := testGoforit(10*time.Millisecond, backend)
+	g, buf := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()
 	g.SetStalenessThreshold(10*time.Minute + 42*time.Second)
 
@@ -709,7 +796,7 @@ func TestNoStaleFile(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
-	g, buf := testGoforit(10*time.Millisecond, backend)
+	g, buf := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()
 
 	time.Sleep(50 * time.Millisecond)
@@ -722,11 +809,11 @@ func TestStaleRefresh(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyBackend{}
-	g, buf := testGoforit(10*time.Millisecond, backend)
+	g, buf := testGoforit(10*time.Millisecond, backend, time.Nanosecond)
 	g.SetStalenessThreshold(50 * time.Millisecond)
 
 	// Simulate stopping refresh
-	g.Close()
+	g.ticker.Stop()
 	time.Sleep(100 * time.Millisecond)
 
 	for i := 0; i < 10; i++ {

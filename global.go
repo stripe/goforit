@@ -8,7 +8,7 @@ import (
 var globalGoforit *goforit
 
 func init() {
-	globalGoforit = newWithoutInit()
+	globalGoforit = newWithoutInit(enabledTickerInterval)
 }
 
 func Enabled(ctx context.Context, name string, props map[string]string) (enabled bool) {
