@@ -24,6 +24,10 @@ type jsonFileBackend struct {
 	filename string
 }
 
+type mapBackend struct {
+	flags map[string]bool
+}
+
 type flagJson struct {
 	Name   string
 	Active bool
@@ -117,6 +121,17 @@ func (b csvFileBackend) Refresh() ([]Flag, time.Time, error) {
 	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
+func (b mapBackend) Refresh() ([]Flag, time.Time, error) {
+	flags := make([]Flag, 0, len(b.flags))
+	for name, enabled := range b.flags {
+		flags = append(flags, Flag{
+			Name:   name,
+			Active: enabled,
+		})
+	}
+	return flags, time.Time{}, nil
+}
+
 func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 	// every row is guaranteed to have 2 fields
 	const FieldsPerRecord = 2
@@ -176,4 +191,10 @@ func BackendFromFile(filename string) Backend {
 // instead of CSV
 func BackendFromJSONFile(filename string) Backend {
 	return jsonFileBackend{filename}
+}
+
+// BackendFromMap creates a backend powered by a map. Useful for
+// testing.
+func BackendFromMap(flags map[string]bool) Backend {
+	return mapBackend{flags}
 }
