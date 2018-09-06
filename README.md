@@ -37,6 +37,13 @@ func main() {
 }
 ```
 
+If you want to set feature flags in a test, you can define your flags using a
+map:
+
+```
+flags := map[string]bool{"my.flag": true}
+goforit.Init(0, goforit.BackendFromMap(flags))
+```
 
 # Status
 

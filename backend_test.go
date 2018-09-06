@@ -1,6 +1,7 @@
 package goforit
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,6 +109,15 @@ func TestParseFlagsJSON(t *testing.T) {
 			assert.Equal(t, tc.Expected, flags)
 		})
 	}
+}
+
+func TestParseFlagsString(t *testing.T) {
+	t.Parallel()
+
+	flags := map[string]bool{"go.sun.moon": true}
+	backend := BackendFromMap(flags)
+	g, _ := testGoforit(0, backend, enabledTickerInterval)
+	assert.True(t, g.Enabled(context.Background(), "go.sun.moon", nil))
 }
 
 func TestMultipleDefinitions(t *testing.T) {
