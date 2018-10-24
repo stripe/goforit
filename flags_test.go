@@ -238,7 +238,7 @@ type dummyRulesBackend struct{}
 
 func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 	var flags = []Flag{
-		Flag{
+		{
 			"test1",
 			true,
 			[]RuleInfo{
@@ -246,7 +246,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test2",
 			true,
 			[]RuleInfo{
@@ -254,7 +254,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test3",
 			true,
 			[]RuleInfo{
@@ -263,7 +263,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test4",
 			true,
 			[]RuleInfo{
@@ -272,7 +272,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test5",
 			true,
 			[]RuleInfo{
@@ -281,7 +281,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test6",
 			true,
 			[]RuleInfo{
@@ -291,7 +291,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test7",
 			true,
 			[]RuleInfo{
@@ -301,7 +301,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test8",
 			true,
 			[]RuleInfo{
@@ -311,7 +311,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test9",
 			true,
 			[]RuleInfo{
@@ -321,7 +321,7 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test10",
 			true,
 			[]RuleInfo{
@@ -331,13 +331,13 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			},
 			nil,
 		},
-		Flag{
+		{
 			"test11",
 			true,
 			[]RuleInfo{},
 			nil,
 		},
-		Flag{
+		{
 			"test12",
 			false,
 			[]RuleInfo{

@@ -365,7 +365,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 		}
 	}
 
-	for name, _ := range deleted {
+	for name := range deleted {
 		f, ok := g.flags.Load(name)
 		if ok {
 			f.(Flag).enabledTicker.Stop()
@@ -400,7 +400,7 @@ func (g *goforit) init(interval time.Duration, backend Backend) {
 		g.ticker = ticker
 
 		go func() {
-			for _ = range ticker.C {
+			for range ticker.C {
 				g.RefreshFlags(backend)
 			}
 		}()
