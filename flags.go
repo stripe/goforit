@@ -18,14 +18,16 @@ import (
 	"github.com/DataDog/datadog-go/statsd"
 )
 
-const statsdAddress = "127.0.0.1:8200"
+// The default statsd address to emit metrics to.
+const DefaultStatsdAddr = "127.0.0.1:8200"
 
 const lastAssertInterval = 5 * time.Minute
 
 const enabledTickerInterval = 10 * time.Second
 
-// An interface reflecting the parts of statsd that we need, so we can mock it
-type statsdClient interface {
+// StatsdClient is the set of methods required to emit metrics to statsd, for
+// customizing behavior or mocking.
+type StatsdClient interface {
 	Histogram(string, float64, []string, float64) error
 	Gauge(string, float64, []string, float64) error
 	Count(string, int64, []string, float64) error
@@ -49,7 +51,7 @@ type goforit struct {
 
 	defaultTags sync.Map
 
-	stats statsdClient
+	stats StatsdClient
 
 	// Last time we alerted that flags may be out of date
 	lastAssertMtx sync.Mutex
@@ -59,27 +61,56 @@ type goforit struct {
 	rndMtx sync.Mutex
 	rnd    *rand.Rand
 
-	logger *log.Logger
+	printf func(msg string, args ...interface{})
 }
 
 const DefaultInterval = 30 * time.Second
 
 func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
-	stats, _ := statsd.New(statsdAddress)
+	stats, _ := statsd.New(DefaultStatsdAddr)
 	return &goforit{
-		stats: stats,
+		stats:                 stats,
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
 		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger:                log.New(os.Stderr, "[goforit] ", log.LstdFlags),
+		printf:                log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 	}
 }
 
 // New creates a new goforit
-func New(interval time.Duration, backend Backend) *goforit {
+func New(interval time.Duration, backend Backend, opts ...Option) *goforit {
 	g := newWithoutInit(enabledTickerInterval)
+	for _, opt := range opts {
+		opt.apply(g)
+	}
 	g.init(interval, backend)
 	return g
+}
+
+type Option interface {
+	apply(g *goforit)
+}
+
+type optionFunc func(g *goforit)
+
+func (o optionFunc) apply(g *goforit) {
+	o(g)
+}
+
+// Logger uses the supplied function to log errors. By default, errors are
+// written to os.Stderr.
+func Logger(printf func(msg string, args ...interface{})) Option {
+	return optionFunc(func(g *goforit) {
+		g.printf = printf
+	})
+}
+
+// Statsd uses the supplied client to emit metrics to. By default, a client is
+// created and configured to emit metrics to DefaultStatsdAddr.
+func Statsd(stats StatsdClient) Option {
+	return optionFunc(func(g *goforit) {
+		g.stats = stats
+	})
 }
 
 func (g *goforit) rand() float64 {
@@ -178,7 +209,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 	}
 	// Don't log too often!
 	if !checkLastAssert || g.logStaleCheck() {
-		g.logger.Printf(msg, staleness, thresh)
+		g.printf(msg, staleness, thresh)
 	}
 }
 
@@ -247,7 +278,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	for _, r := range flag.Rules {
 		res, err := r.Rule.Handle(flag.Name, mergedProperties)
 		if err != nil {
-			g.logger.Printf("[goforit] error evaluating rule:\n %s", err)
+			g.printf("error evaluating rule:\n %s", err)
 			return
 		}
 		var matchBehavior RuleAction
@@ -266,7 +297,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		case RuleContinue:
 			continue
 		default:
-			g.logger.Printf("[goforit] unknown match behavior: " + string(matchBehavior))
+			g.printf("unknown match behavior: " + string(matchBehavior))
 			return
 		}
 	}
@@ -339,7 +370,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	if err != nil {
 		checkStatus = statsd.Warn
 		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
-		g.logger.Printf("Error refreshing flags: %s", err)
+		g.printf("Error refreshing flags: %s", err)
 		return
 	}
 	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())

@@ -58,13 +58,15 @@ func (m *mockStatsd) getHistogramValues(name string) []float64 {
 	return s
 }
 
+var _ StatsdClient = &mockStatsd{}
+
 // Build a goforit for testing
 // Also return the log output
 func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration) (*goforit, *bytes.Buffer) {
 	g := newWithoutInit(enabledTickerInterval)
 	g.rnd = rand.New(rand.NewSource(seed))
 	var buf bytes.Buffer
-	g.logger = log.New(&buf, "", 9)
+	g.printf = log.New(&buf, "", 9).Printf
 	g.stats = &mockStatsd{}
 
 	if backend != nil {
