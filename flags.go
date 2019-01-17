@@ -80,10 +80,7 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 // New creates a new goforit
 func New(interval time.Duration, backend Backend, opts ...Option) *goforit {
 	g := newWithoutInit(enabledTickerInterval)
-	for _, opt := range opts {
-		opt.apply(g)
-	}
-	g.init(interval, backend)
+	g.init(interval, backend, opts...)
 	return g
 }
 
@@ -424,7 +421,12 @@ func (g *goforit) AddDefaultTags(tags map[string]string) {
 
 // init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
-func (g *goforit) init(interval time.Duration, backend Backend) {
+// Applies passed initialization options to the goforit instance.
+func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) {
+	for _, opt := range opts {
+		opt.apply(g)
+	}
+
 	g.RefreshFlags(backend)
 	if interval != 0 {
 		ticker := time.NewTicker(interval)

@@ -62,7 +62,7 @@ var _ StatsdClient = &mockStatsd{}
 
 // Build a goforit for testing
 // Also return the log output
-func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration) (*goforit, *bytes.Buffer) {
+func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *bytes.Buffer) {
 	g := newWithoutInit(enabledTickerInterval)
 	g.rnd = rand.New(rand.NewSource(seed))
 	var buf bytes.Buffer
@@ -70,7 +70,7 @@ func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval 
 	g.stats = &mockStatsd{}
 
 	if backend != nil {
-		g.init(interval, backend)
+		g.init(interval, backend, options...)
 	}
 
 	return g, &buf
@@ -86,6 +86,16 @@ func TestGlobal(t *testing.T) {
 
 	assert.False(t, Enabled(nil, "go.sun.money", nil))
 	assert.True(t, Enabled(nil, "go.moon.mercury", nil))
+}
+
+func TestGlobalInitOptions(t *testing.T) {
+	// Not parallel, testing global behavior
+	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	stats := &mockStatsd{}
+	Init(DefaultInterval, backend, Statsd(stats))
+	defer Close()
+
+	assert.Equal(t, stats, globalGoforit.stats)
 }
 
 func TestEnabled(t *testing.T) {
