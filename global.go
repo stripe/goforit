@@ -27,8 +27,8 @@ func AddDefaultTags(tags map[string]string) {
 	globalGoforit.AddDefaultTags(tags)
 }
 
-func Init(interval time.Duration, backend Backend) {
-	globalGoforit.init(interval, backend)
+func Init(interval time.Duration, backend Backend, opts ...Option) {
+	globalGoforit.init(interval, backend, opts...)
 }
 
 func Close() error {
