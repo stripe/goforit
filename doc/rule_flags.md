@@ -269,13 +269,13 @@ On for 1% of users. Consistently on for the same set of users.
 }
 ```
 
-### Whitelist
+### Allowlist
 
 On for only Alice and Bob:
 
 ```
 {
-	"name": "test.whitelist",
+	"name": "test.allowlist",
 	"active": true,
 	"rules": [
 		{
@@ -289,13 +289,13 @@ On for only Alice and Bob:
 }
 ```
 
-### Blacklist
+### Denylist
 
 On for everyone except Xavier:
 
 ```
 {
-	"name": "test.blacklist",
+	"name": "test.denylist",
 	"active": true,
 	"rules": [
 		{
@@ -309,14 +309,14 @@ On for everyone except Xavier:
 }
 ```
 
-### Whitelist some, sample from the rest
+### Allowlist some, sample from the rest
 
 This is useful for a new feature, with some explicit test users, and a random selection of other users:
 
 
 ```
 {
-	"name": "test.random_by_with_whitelist",
+	"name": "test.random_by_with_allowlist",
 	"active": true,
 	"rules": [
 		{
@@ -344,7 +344,7 @@ Only Alice should have this feature, and she should only see it for 5% of reques
 
 ```
 {
-	"name": "test.whitelist_then_sample",
+	"name": "test.allowlist_then_sample",
 	"active": true,
 	"rules": [
 		{
@@ -365,13 +365,13 @@ Only Alice should have this feature, and she should only see it for 5% of reques
 }
 ```
 
-### Multiple whitelist
+### Multiple allowlist
 
 Multiple properties must all be matched:
 
 ```
 {
-	"name": "test.multi_whitelist",
+	"name": "test.multi_allowlist",
 	"active": true,
 	"rules": [
 		{
