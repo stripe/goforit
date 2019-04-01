@@ -34,6 +34,16 @@ type StatsdClient interface {
 	SimpleServiceCheck(string, statsd.ServiceCheckStatus) error
 }
 
+// Goforit is the main interface for the library to check if flags enabled, refresh flags
+// customizing behavior or mocking.
+type Goforit interface {
+	Enabled(ctx context.Context, name string, props map[string]string) (enabled bool)
+	RefreshFlags(backend Backend)
+	SetStalenessThreshold(threshold time.Duration)
+	AddDefaultTags(tags map[string]string)
+	Close() error
+}
+
 type goforit struct {
 	ticker *time.Ticker
 
@@ -78,7 +88,7 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 }
 
 // New creates a new goforit
-func New(interval time.Duration, backend Backend, opts ...Option) *goforit {
+func New(interval time.Duration, backend Backend, opts ...Option) Goforit {
 	g := newWithoutInit(enabledTickerInterval)
 	g.init(interval, backend, opts...)
 	return g
@@ -476,3 +486,6 @@ func (g *goforit) Close() error {
 	}
 	return nil
 }
+
+// for the interface compatability static check
+var _ Goforit = &goforit{}
