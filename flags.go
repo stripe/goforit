@@ -3,12 +3,13 @@ package goforit
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/big"
 	"os"
 	"sort"
 	"sync"
@@ -67,10 +68,6 @@ type goforit struct {
 	lastAssertMtx sync.Mutex
 	lastAssert    time.Time
 
-	// rand is not concurrency safe, in general
-	rndMtx sync.Mutex
-	rnd    *rand.Rand
-
 	printf func(msg string, args ...interface{})
 }
 
@@ -79,10 +76,9 @@ const DefaultInterval = 30 * time.Second
 func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 	stats, _ := statsd.New(DefaultStatsdAddr)
 	return &goforit{
-		stats:                 stats,
+		stats: stats,
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
-		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
 		printf:                log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 	}
 }
@@ -118,12 +114,6 @@ func Statsd(stats StatsdClient) Option {
 	return optionFunc(func(g *goforit) {
 		g.stats = stats
 	})
-}
-
-func (g *goforit) rand() float64 {
-	g.rndMtx.Lock()
-	defer g.rndMtx.Unlock()
-	return g.rnd.Float64()
 }
 
 type Flag struct {
@@ -320,6 +310,15 @@ func getProperty(props map[string]string, prop string) (string, error) {
 	}
 }
 
+func randFloat64() float64 {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		return 0
+	}
+
+	return (float64(nBig.Int64()) / float64(1<<62))
+}
+
 func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
@@ -344,8 +343,7 @@ func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 		// is less than (rate * 2^32)
 		return float64(x) < (r.Rate * float64(1<<32)), nil
 	} else {
-		f := rand.Float64()
-		return f < r.Rate, nil
+		return randFloat64() < r.Rate, nil
 	}
 }
 

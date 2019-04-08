@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +63,6 @@ var _ StatsdClient = &mockStatsd{}
 // Also return the log output
 func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *bytes.Buffer) {
 	g := newWithoutInit(enabledTickerInterval)
-	g.rnd = rand.New(rand.NewSource(seed))
 	var buf bytes.Buffer
 	g.printf = log.New(&buf, "", 9).Printf
 	g.stats = &mockStatsd{}
