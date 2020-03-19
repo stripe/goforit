@@ -5,7 +5,7 @@ goforit is an experimental, quick-and-dirty client library for feature flags in 
 
 # Backends
 
-Feature flags can be stored in any desired backend. goforit provides a flatfile implementation out-of-the-box, so feature flags can be defined in a [CSV][CSV] file.
+Feature flags can be stored in any desired backend. goforit provides a several flatfile implementations out-of-the-box, so feature flags can be defined in a JSON or CSV file. See below for details.    
 
 Alternatively, flags can be stored in a key-value store like Consul or Redis.
 
@@ -37,9 +37,27 @@ func main() {
 }
 ```
 
+# Backends
+
+Included flatfile backends are:
+
+## CSV
+
+This is a very simple backend, where every row defines a flag name and a rate at which it should be enabled, between zero and one. Initialize this backend with `BackendFromFile`. See [an example][CSV].
+
+## JSON v1
+
+This backend allows each flag to have multiple rules, like a series of if-statements. Each call to `.Enabled()` takes a map of properties, which rules can match against. Each rule's matching or non-matching can cause the overall flag to be on or off, or can fallthrough to the next rule. See [the proposal for this system][JSON1_proposal] or [an example JSON file][JSON1]. It's a bit confusing to understand.
+
+## JSON v2
+
+In this format, each flag can have a number of rules, and each rule can contain a number of predicates for matching properties. When a flag is evaluated, it uses the first rule whose predicates match the given properties. See [an example JSON file, that also includes test cases][JSON2].
 
 # Status
 
 goforit is in an experimental state and may introduce breaking changes without notice.
 
 [CSV]: https://github.com/stripe/goforit/blob/master/fixtures/flags_example.csv
+[JSON1_proposal]: https://github.com/stripe/goforit/blob/master/doc/rule_flags.md
+[JSON1]: https://github.com/stripe/goforit/blob/master/fixtures/flags_example.json
+[JSON2]: https://github.com/stripe/goforit/blob/master/fixtures/flags2_acceptance.json
