@@ -2,6 +2,7 @@ package goforit
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ import (
 type FlagTestCase2 struct {
 	Flag     string
 	Expected bool
-	Attrs    map[string]string
+	Attrs    map[string]*string
 	Message  string
 }
 type FlagAcceptance2 struct {
@@ -93,10 +94,19 @@ func TestFlags2Acceptance(t *testing.T) {
 	}
 
 	for _, tc := range acceptanceData.TestCases {
-		t.Run(tc.Message, func(t *testing.T) {
-			actual, err := flags[tc.Flag].Evaluate(tc.Attrs)
+		name := fmt.Sprintf("%s:%s", tc.Flag, tc.Message)
+		t.Run(name, func(t *testing.T) {
+			// We don't distinguish between missing/nil values
+			attrs := map[string]string{}
+			for k, v := range tc.Attrs {
+				if v != nil {
+					attrs[k] = *v
+				}
+			}
+
+			actual, err := flags[tc.Flag].Evaluate(attrs)
 			assert.NoError(t, err)
-			assert.Equal(t, tc.Expected, actual)
+			assert.Equal(t, tc.Expected, actual, "%q %q", tc.Flag, tc.Attrs)
 		})
 	}
 }
