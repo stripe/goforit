@@ -24,6 +24,10 @@ type jsonFileBackend struct {
 	filename string
 }
 
+type jsonFileBackend2 struct {
+	filename string
+}
+
 type flagJson struct {
 	Name   string
 	Active bool

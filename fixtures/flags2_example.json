@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "flags": [
+    {
+      "name": "off_flag",
+      "_id": "ff_1",
+      "seed": "seed_1",
+      "rules": []
+    },
+    {
+      "name": "flag5",
+      "_id": "ff_5",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": [
+          {"attribute": "token", "operation": "in", "values": ["id_1", "id_2"]},
+          {"attribute": "country", "operation": "not_in", "values": ["KP"]}
+        ]},
+        {"hash_by": "token", "percent": 0.5, "predicates": []}
+      ]
+    }
+  ],
+  "updated": 1584642857.7121534
+}

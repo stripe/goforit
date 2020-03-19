@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"time"
 )
 
 type Operation2 string
@@ -41,8 +43,9 @@ type Flag2 struct {
 	Rules []Rule2
 }
 
-type FlagFile2 struct {
-	Flags []Flag2
+type JSONFormat2 struct {
+	Flags   []Flag2
+	Updated float64
 }
 
 type predicate2Json struct {
@@ -189,4 +192,29 @@ func (r Rule2) evaluate(rnd randFunc, seed string, properties map[string]string)
 
 	val := properties[r.HashBy]
 	return r.hashValue(seed, val) < r.Percent, nil
+}
+
+func (b jsonFileBackend2) Refresh() ([]Flag, time.Time, error) {
+	return readFile(b.filename, "json2", parseFlagsJSON2)
+}
+
+func parseFlagsJSON2(r io.Reader) ([]Flag, time.Time, error) {
+	dec := json.NewDecoder(r)
+	var v JSONFormat2
+	err := dec.Decode(&v)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	flags := make([]Flag, len(v.Flags))
+	for i, f := range v.Flags {
+		flags[i] = f
+	}
+
+	return flags, time.Unix(int64(v.Updated), 0), nil
+}
+
+// BackendFromJSONFile2 creates a v2 backend powered by a JSON file
+func BackendFromJSONFile2(filename string) Backend {
+	return jsonFileBackend2{filename}
 }
