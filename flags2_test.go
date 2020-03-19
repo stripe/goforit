@@ -96,6 +96,8 @@ func TestFlags2Acceptance(t *testing.T) {
 	for _, tc := range acceptanceData.TestCases {
 		name := fmt.Sprintf("%s:%s", tc.Flag, tc.Message)
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			// We don't distinguish between missing/nil values
 			attrs := map[string]string{}
 			for k, v := range tc.Attrs {
