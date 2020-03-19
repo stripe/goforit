@@ -256,7 +256,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			[]RuleInfo{
 				{&OnRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test2",
@@ -264,7 +263,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			[]RuleInfo{
 				{&OnRule{}, RuleOff, RuleOn},
 			},
-			nil,
 		},
 		{
 			"test3",
@@ -273,7 +271,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleContinue},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test4",
@@ -282,7 +279,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleOff},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test5",
@@ -291,7 +287,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OnRule{}, RuleContinue, RuleOn},
 				{&OffRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test6",
@@ -301,7 +296,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OffRule{}, RuleContinue, RuleOff},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test7",
@@ -311,7 +305,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OnRule{}, RuleContinue, RuleOff},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test8",
@@ -321,7 +314,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleContinue},
 				{&OnRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test9",
@@ -331,7 +323,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleContinue},
 				{&OffRule{}, RuleOn, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test10",
@@ -341,13 +332,11 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 				{&OffRule{}, RuleOn, RuleOff},
 				{&OnRule{}, RuleContinue, RuleOff},
 			},
-			nil,
 		},
 		{
 			"test11",
 			true,
 			[]RuleInfo{},
-			nil,
 		},
 		{
 			"test12",
@@ -355,7 +344,6 @@ func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
 			[]RuleInfo{
 				{&OnRule{}, RuleOn, RuleOn},
 			},
-			nil,
 		},
 	}
 	return flags, time.Time{}, nil
@@ -462,10 +450,10 @@ func TestRefreshTicker(t *testing.T) {
 	defer g.Close()
 
 	earthTicker := time.NewTicker(time.Nanosecond)
-	g.flags.Store("go.earth.money", Flag{"go.earth.money", true, nil, earthTicker})
+	g.flags.Store("go.earth.money", flagHolder{Flag{"go.earth.money", true, nil}, earthTicker})
 	f, ok := g.flags.Load("go.moon.mercury")
 	assert.True(t, ok)
-	moonTicker := f.(Flag).enabledTicker
+	moonTicker := f.(flagHolder).enabledTicker
 	g.flags.Delete("go.stars.money")
 	// Give tickers time to run.
 	time.Sleep(time.Millisecond)
@@ -484,7 +472,7 @@ func TestRefreshTicker(t *testing.T) {
 	// Make sure that the ticker was preserved.
 	f, ok = g.flags.Load("go.moon.mercury")
 	assert.True(t, ok)
-	assert.Equal(t, moonTicker, f.(Flag).enabledTicker)
+	assert.Equal(t, moonTicker, f.(flagHolder).enabledTicker)
 
 	// Make sure that the deleted flag's ticker was stopped.
 	_, ok = <-earthTicker.C
@@ -546,7 +534,6 @@ func (b *dummyDefaultFlagsBackend) Refresh() ([]Flag, time.Time, error) {
 			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
 			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
 		},
-		time.NewTicker(time.Second),
 	}
 	return []Flag{testFlag}, time.Time{}, nil
 }
@@ -682,7 +669,6 @@ func (b *dummyAgeBackend) Refresh() ([]Flag, time.Time, error) {
 		"go.sun.money",
 		true,
 		[]RuleInfo{},
-		time.NewTicker(time.Nanosecond),
 	}
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
@@ -742,7 +728,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 
 	tickerC := make(chan time.Time, 1)
 	f, _ := g.flags.Load("go.sun.money")
-	flag := f.(Flag)
+	flag := f.(flagHolder)
 	flag.enabledTicker = &time.Ticker{C: tickerC}
 	g.flags.Store("go.sun.money", flag)
 

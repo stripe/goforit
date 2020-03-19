@@ -127,9 +127,13 @@ func (g *goforit) rand() float64 {
 }
 
 type Flag struct {
-	Name          string
-	Active        bool
-	Rules         []RuleInfo
+	Name   string
+	Active bool
+	Rules  []RuleInfo
+}
+
+type flagHolder struct {
+	flag          Flag
 	enabledTicker *time.Ticker
 }
 
@@ -227,10 +231,10 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
 	f, ok := g.flags.Load(name)
-	var flag Flag
+	var flag flagHolder
 	var tickerC <-chan time.Time
 	if ok {
-		flag = f.(Flag)
+		flag = f.(flagHolder)
 		tickerC = flag.enabledTicker.C
 	} else {
 		tickerC = g.enabledTicker.C
@@ -263,12 +267,12 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	}
 
 	// if flag is inactive, always return false
-	if !flag.Active {
+	if !flag.flag.Active {
 		return
 	}
 
 	// if there are no rules, but flag is active, always return true
-	if len(flag.Rules) == 0 {
+	if len(flag.flag.Rules) == 0 {
 		enabled = true
 		return
 	}
@@ -282,8 +286,8 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		mergedProperties[k] = v
 	}
 
-	for _, r := range flag.Rules {
-		res, err := r.Rule.Handle(flag.Name, mergedProperties)
+	for _, r := range flag.flag.Rules {
+		res, err := r.Rule.Handle(flag.flag.Name, mergedProperties)
 		if err != nil {
 			g.printf("error evaluating rule:\n %s", err)
 			return
@@ -393,20 +397,21 @@ func (g *goforit) RefreshFlags(backend Backend) {
 		oldFlag, ok := g.flags.Load(flag.Name)
 		if ok {
 			// Avoid churning the map if the flag hasn't changed.
-			if !oldFlag.(Flag).Equal(flag) {
-				flag.enabledTicker = oldFlag.(Flag).enabledTicker
-				g.flags.Store(flag.Name, flag)
+			oldHolder := oldFlag.(flagHolder)
+			if !oldHolder.flag.Equal(flag) {
+				holder := flagHolder{flag: flag, enabledTicker: oldHolder.enabledTicker}
+				g.flags.Store(flag.Name, holder)
 			}
 		} else {
-			flag.enabledTicker = time.NewTicker(g.enabledTickerInterval)
-			g.flags.Store(flag.Name, flag)
+			holder := flagHolder{flag: flag, enabledTicker: time.NewTicker(g.enabledTickerInterval)}
+			g.flags.Store(flag.Name, holder)
 		}
 	}
 
 	for name := range deleted {
 		f, ok := g.flags.Load(name)
 		if ok {
-			f.(Flag).enabledTicker.Stop()
+			f.(flagHolder).enabledTicker.Stop()
 			g.flags.Delete(name)
 		}
 	}
@@ -478,7 +483,7 @@ func (g *goforit) Close() error {
 		g.ticker = nil
 
 		g.flags.Range(func(k, v interface{}) bool {
-			v.(Flag).enabledTicker.Stop()
+			v.(flagHolder).enabledTicker.Stop()
 			return true
 		})
 
