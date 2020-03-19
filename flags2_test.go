@@ -28,6 +28,16 @@ func TestFlags2Backend(t *testing.T) {
 	expectedFlags := []Flag{
 		Flag2{Name: "off_flag", Seed: "seed_1", Rules: []Rule2{}},
 		Flag2{
+			Name:  "go.moon.mercury",
+			Seed:  "seed_1",
+			Rules: []Rule2{{HashBy: "_random", Percent: 1.0, Predicates: []Predicate2{}}},
+		},
+		Flag2{
+			Name:  "go.stars.money",
+			Seed:  "seed_1",
+			Rules: []Rule2{{HashBy: "_random", Percent: 0.5, Predicates: []Predicate2{}}},
+		},
+		Flag2{
 			Name: "flag5",
 			Seed: "seed_1",
 			Rules: []Rule2{

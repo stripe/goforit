@@ -8,6 +8,22 @@
       "rules": []
     },
     {
+      "name": "go.moon.mercury",
+      "_id:": "ff_2",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "_random", "percent": 1.0, "predicates": []}
+      ]
+    },
+    {
+      "name": "go.stars.money",
+      "_id:": "ff_3",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "_random", "percent": 0.5, "predicates": []}
+      ]
+    },
+    {
       "name": "flag5",
       "_id": "ff_5",
       "seed": "seed_1",
