@@ -5,11 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 )
 
 type Operation2 string
-type Attributes2 map[string]string
 
 const (
 	OpIn      = "in"
@@ -23,6 +21,10 @@ const (
 	HashByRandom = "_random"
 )
 
+// A newer, more sophisticated type of flag!
+//
+// Each Flag2 contains a list of rules, and each rule contains a list of predicates.
+// When querying a flag, the first rule whose predicates match is applied.
 type Predicate2 struct {
 	Attribute string
 	Operation Operation2
@@ -38,6 +40,7 @@ type Flag2 struct {
 	Seed  string
 	Rules []Rule2
 }
+
 type FlagFile2 struct {
 	Flags []Flag2
 }
@@ -62,8 +65,72 @@ func (p *Predicate2) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (p Predicate2) matches(attributes Attributes2) (bool, error) {
-	val, present := attributes[p.Attribute]
+func (f Flag2) FlagName() string {
+	return f.Name
+}
+
+func (f Flag2) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
+	for _, rule := range f.Rules {
+		match, err := rule.matches(properties)
+		if err != nil {
+			return false, err
+		}
+		if !match {
+			continue
+		}
+
+		return rule.evaluate(rnd, f.Seed, properties)
+	}
+
+	// If no rules match, the flag is off
+	return false, nil
+}
+
+func (p Predicate2) equal(o Predicate2) bool {
+	if p.Attribute != o.Attribute || p.Operation != o.Operation || len(p.Values) != len(o.Values) {
+		return false
+	}
+
+	for v := range p.Values {
+		if !o.Values[v] {
+			return false
+		}
+	}
+	// Since cardinality is the same, the whole set must be the same
+	return true
+}
+
+func (r Rule2) equal(o Rule2) bool {
+	if r.HashBy != o.HashBy || r.Percent != o.Percent || len(r.Predicates) != len(o.Predicates) {
+		return false
+	}
+	for i := range r.Predicates {
+		if !r.Predicates[i].equal(o.Predicates[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (f Flag2) Equal(other Flag) bool {
+	o, ok := other.(Flag2)
+	if !ok {
+		return false
+	}
+
+	if f.Name != o.Name || f.Seed != o.Seed || len(f.Rules) != len(o.Rules) {
+		return false
+	}
+	for i := range f.Rules {
+		if !f.Rules[i].equal(o.Rules[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (p Predicate2) matches(properties map[string]string) (bool, error) {
+	val, present := properties[p.Attribute]
 	switch p.Operation {
 	case OpIn:
 		return p.Values[val], nil
@@ -78,15 +145,15 @@ func (p Predicate2) matches(attributes Attributes2) (bool, error) {
 	}
 }
 
-func (r Rule2) matches(attributes Attributes2) (bool, error) {
-	_, hashPresent := attributes[r.HashBy]
+func (r Rule2) matches(properties map[string]string) (bool, error) {
+	_, hashPresent := properties[r.HashBy]
 	if !hashPresent && r.HashBy != HashByRandom && r.Percent > PercentOff && r.Percent < PercentOn {
 		// We have no way to calculate a percentage, so the specced behavior is to skip this rule
 		return false, nil
 	}
 
 	for _, pred := range r.Predicates {
-		match, err := pred.matches(attributes)
+		match, err := pred.matches(properties)
 		if err != nil {
 			return false, err
 		}
@@ -108,7 +175,7 @@ func (r Rule2) hashValue(seed, val string) float64 {
 	return float64(ival) / float64(1<<16)
 }
 
-func (r Rule2) evaluate(seed string, attributes Attributes2) (bool, error) {
+func (r Rule2) evaluate(rnd randFunc, seed string, properties map[string]string) (bool, error) {
 	if r.Percent >= PercentOn {
 		return true, nil
 	}
@@ -117,26 +184,9 @@ func (r Rule2) evaluate(seed string, attributes Attributes2) (bool, error) {
 	}
 
 	if r.HashBy == HashByRandom {
-		return rand.Float64() < r.Percent, nil
+		return rnd() < r.Percent, nil
 	}
 
-	val := attributes[r.HashBy]
+	val := properties[r.HashBy]
 	return r.hashValue(seed, val) < r.Percent, nil
-}
-
-func (f Flag2) Evaluate(attributes Attributes2) (bool, error) {
-	for _, rule := range f.Rules {
-		match, err := rule.matches(attributes)
-		if err != nil {
-			return false, err
-		}
-		if !match {
-			continue
-		}
-
-		return rule.evaluate(f.Seed, attributes)
-	}
-
-	// If no rules match, the flag is off
-	return false, nil
 }

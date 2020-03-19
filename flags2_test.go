@@ -106,7 +106,7 @@ func TestFlags2Acceptance(t *testing.T) {
 				}
 			}
 
-			actual, err := flags[tc.Flag].Evaluate(attrs)
+			actual, err := flags[tc.Flag].Enabled(nil, attrs)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.Expected, actual, "%q %q", tc.Flag, tc.Attrs)
 		})
