@@ -27,3 +27,8 @@ type Flag2 struct {
 type FlagFile2 struct {
 	Flags []Flag2
 }
+
+func (f Flag2) Evaluate(attributes map[string]string) bool {
+	// TODO
+	return true
+}

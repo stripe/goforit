@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "flags": [
+    {
+      "name": "off_flag",
+      "_id": "ff_1",
+      "seed": "seed_1",
+      "rules": []
+    },
+    {
+      "name": "on_flag",
+      "_id": "ff_2",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": []}
+      ]
+    },
+    {
+      "name": "random_by_token_flag",
+      "_id": "ff_3",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 0.2, "predicates": []}
+      ]
+    },
+    {
+      "name": "random_by_token_flag_same_seed_increased_percent",
+      "_id": "ff_3",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 0.8, "predicates": []}
+      ]
+    },
+    {
+      "name": "random_by_token_flag_different_seed",
+      "_id": "ff_4",
+      "seed": "seed_X",
+      "rules": [
+        {"hash_by": "token", "percent": 0.2, "predicates": []}
+      ]
+    },
+    {
+      "name": "blacklist_whitelist_by_token",
+      "_id": "ff_5",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 0.0, "predicates": [
+          {"attribute": "token", "operation": "in", "values": ["id_1", "id_2"]}
+        ]},
+        {"hash_by": "token", "percent": 1.0, "predicates": [
+          {"attribute": "token", "operation": "in", "values": ["id_2", "id_3"]}
+        ]}
+      ]
+    },
+    {
+      "name": "country_ban",
+      "_id": "ff_5",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": [
+          {"attribute": "token", "operation": "in", "values": ["id_1", "id_2"]},
+          {"attribute": "country", "operation": "not_in", "values": ["KP", "IR"]}
+        ]}
+      ]
+    },
+    {
+      "name": "off_flag_edge_override_on",
+      "_id": "ff_6",
+      "seed": "seed_1",
+      "rules": [],
+      "edge_override": true
+    },
+    {
+      "name": "off_flag_edge_override_off",
+      "_id": "ff_6",
+      "seed": "seed_1",
+      "rules": [],
+      "edge_override": false
+    },
+    {
+      "name": "bail_if_null_else_on",
+      "_id": "ff_5",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 0.0, "predicates": [
+          {"attribute": "token", "operation": "is_nil", "values": []}
+        ]},
+        {"hash_by": "token", "percent": 1.0, "predicates": []}
+      ]
+    }
+  ],
+
+  "test_cases": [
+    {"flag": "off_flag", "expected": false, "attrs": {"token" : "x"}, "message": "always off"},
+    {"flag": "off_flag", "expected": false, "attrs": {"token" : "x", "foo" : "bar"}, "message": "always off, ignores attrs"},
+    {"flag": "off_flag", "expected": false, "attrs": {}, "message": "always off, ignores attrs, even when there are none"},
+
+    {"flag": "on_flag", "expected": true, "attrs": {"token": "x"}, "message": "always on"},
+    {"flag": "on_flag", "expected": true, "attrs": {"token": "x", "foo" : "bar"}, "message": "always on, ignores attrs"},
+    {"flag": "on_flag", "expected": true, "attrs": {}, "message": "always on, ignores attrs, even when there are none"},
+
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : null}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "0"}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "1"}},
+    {"flag": "random_by_token_flag", "expected": true, "attrs": {"token" : "2"}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "3"}},
+    {"flag": "random_by_token_flag", "expected": true, "attrs": {"token" : "4"}},
+    {"flag": "random_by_token_flag", "expected": true, "attrs": {"token" : "5"}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "6"}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "7"}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "8"}},
+    {"flag": "random_by_token_flag", "expected": false, "attrs": {"token" : "9"}},
+
+
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "0"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "1"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "2"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "3"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "4"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "5"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "6"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": false, "attrs": {"token" : "7"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "8"}},
+    {"flag": "random_by_token_flag_same_seed_increased_percent", "expected": true, "attrs": {"token" : "9"}},
+
+    {"flag": "random_by_token_flag_different_seed", "expected": true, "attrs": {"token" : "0"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "1"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "2"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": true, "attrs": {"token" : "3"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "4"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": true, "attrs": {"token" : "5"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "6"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "7"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "8"}},
+    {"flag": "random_by_token_flag_different_seed", "expected": false, "attrs": {"token" : "9"}},
+
+    {"flag": "blacklist_whitelist_by_token", "expected": false, "attrs": {"token" : null}, "message": "null id"},
+    {"flag": "blacklist_whitelist_by_token", "expected": false, "attrs": {"token" : "id_1"}, "message": "blacklisted id"},
+    {"flag": "blacklist_whitelist_by_token", "expected": false, "attrs": {"token" : "id_2"}, "message": "blacklist evaluated first"},
+    {"flag": "blacklist_whitelist_by_token", "expected": true, "attrs": {"token" : "id_3"}, "message": "whitelist id"},
+    {"flag": "blacklist_whitelist_by_token", "expected": false, "attrs": {"token" : "id_X"}, "message": "false if neither"},
+
+    {"flag": "country_ban", "expected": false, "attrs": {"token" : "id_1", "country": "IR"}, "message": "banned country"},
+    {"flag": "country_ban", "expected": true, "attrs": {"token" : "id_1", "country": "US"}, "message": "allowed country, in whitelist"},
+    {"flag": "country_ban", "expected": false, "attrs": {"token" : "id_X", "country": "US"}, "message": "allowed country, not in whitelist"},
+
+    {"flag": "off_flag_edge_override_on", "expected": false, "attrs": {"token" : "x", "foo" : "bar"}, "message": "always off, edge_override present only for validation"},
+    {"flag": "off_flag_edge_override_off", "expected": false, "attrs": {"token" : "x", "foo" : "bar"}, "message": "always off, edge_override present only for validation"},
+
+    {"flag": "bail_if_null_else_on", "expected": false, "attrs": {"token" : null}},
+    {"flag": "bail_if_null_else_on", "expected": true, "attrs": {"token" : "foo"}}
+  ]
+}

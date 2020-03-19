@@ -2,10 +2,24 @@ package goforit
 
 import (
 	"encoding/json"
+	"io/ioutil"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type FlagTestCase2 struct {
+	Flag     string
+	Expected bool
+	Attrs    map[string]string
+	Message  string
+}
+type FlagAcceptance2 struct {
+	FlagFile2
+	TestCases []FlagTestCase2 `json:"test_cases"`
+}
 
 func TestFlags2Parse(t *testing.T) {
 	t.Parallel()
@@ -60,4 +74,28 @@ func TestFlags2Parse(t *testing.T) {
 	err := json.Unmarshal([]byte(jsonText), &file)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, file)
+}
+
+func TestFlags2Acceptance(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("fixtures", "flags2_acceptance.json")
+	buf, err := ioutil.ReadFile(path)
+	require.NoError(t, err)
+
+	var acceptanceData FlagAcceptance2
+	err = json.Unmarshal(buf, &acceptanceData)
+	require.NoError(t, err)
+
+	var flags = map[string]Flag2{}
+	for _, f := range acceptanceData.Flags {
+		flags[f.Name] = f
+	}
+
+	for _, tc := range acceptanceData.TestCases {
+		t.Run(tc.Message, func(t *testing.T) {
+			actual := flags[tc.Flag].Evaluate(tc.Attrs)
+			assert.Equal(t, tc.Expected, actual)
+		})
+	}
 }
