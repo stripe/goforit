@@ -176,10 +176,10 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
-	f, ok := g.flags.Load(name)
+	f, flagExists := g.flags.Load(name)
 	var flag flagHolder
 	var tickerC <-chan time.Time
-	if ok {
+	if flagExists {
 		flag = f.(flagHolder)
 		tickerC = flag.enabledTicker.C
 	} else {
@@ -210,6 +210,11 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 				return
 			}
 		}
+	}
+
+	if !flagExists {
+		enabled = false
+		return
 	}
 
 	mergedProperties := make(map[string]string)
@@ -256,18 +261,19 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	})
 
 	for _, flag := range refreshedFlags {
-		delete(deleted, flag.Name)
-		oldFlag, ok := g.flags.Load(flag.Name)
+		name := flag.FlagName()
+		delete(deleted, name)
+		oldFlag, ok := g.flags.Load(name)
 		if ok {
 			// Avoid churning the map if the flag hasn't changed.
 			oldHolder := oldFlag.(flagHolder)
 			if !oldHolder.flag.Equal(flag) {
 				holder := flagHolder{flag: flag, enabledTicker: oldHolder.enabledTicker}
-				g.flags.Store(flag.Name, holder)
+				g.flags.Store(name, holder)
 			}
 		} else {
 			holder := flagHolder{flag: flag, enabledTicker: time.NewTicker(g.enabledTickerInterval)}
-			g.flags.Store(flag.Name, holder)
+			g.flags.Store(name, holder)
 		}
 	}
 

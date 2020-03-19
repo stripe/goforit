@@ -24,17 +24,17 @@ func TestParseFlagsCSV(t *testing.T) {
 			Name:     "BasicExample",
 			Filename: filepath.Join("fixtures", "flags_example.csv"),
 			Expected: []Flag{
-				{
+				Flag1{
 					"go.sun.money",
 					true,
 					[]RuleInfo{{&RateRule{Rate: 0}, RuleOn, RuleOff}},
 				},
-				{
+				Flag1{
 					"go.moon.mercury",
 					true,
 					nil,
 				},
-				{
+				Flag1{
 					"go.stars.money",
 					true,
 					[]RuleInfo{{&RateRule{Rate: 0.5}, RuleOn, RuleOff}},
@@ -72,7 +72,7 @@ func TestParseFlagsJSON(t *testing.T) {
 			Name:     "BasicExample",
 			Filename: filepath.Join("fixtures", "flags_example.json"),
 			Expected: []Flag{
-				{
+				Flag1{
 					"go.sun.moon",
 					true,
 					[]RuleInfo{
@@ -81,7 +81,7 @@ func TestParseFlagsJSON(t *testing.T) {
 						{&RateRule{0.01, []string{"cluster", "db"}}, RuleOn, RuleOff},
 					},
 				},
-				{
+				Flag1{
 					"go.sun.mercury",
 					true,
 					[]RuleInfo{
@@ -118,6 +118,6 @@ func TestMultipleDefinitions(t *testing.T) {
 	f, ok := g.flags.Load(repeatedFlag)
 	assert.True(t, ok)
 	flag := f.(flagHolder).flag
-	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
+	assert.Equal(t, flag, Flag1{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
 
 }

@@ -191,7 +191,7 @@ func TestRefreshTicker(t *testing.T) {
 	defer g.Close()
 
 	earthTicker := time.NewTicker(time.Nanosecond)
-	g.flags.Store("go.earth.money", flagHolder{Flag{"go.earth.money", true, nil}, earthTicker})
+	g.flags.Store("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, earthTicker})
 	f, ok := g.flags.Load("go.moon.mercury")
 	assert.True(t, ok)
 	moonTicker := f.(flagHolder).enabledTicker
@@ -257,7 +257,7 @@ func BenchmarkEnabled100(b *testing.B) {
 type dummyDefaultFlagsBackend struct{}
 
 func (b *dummyDefaultFlagsBackend) Refresh() ([]Flag, time.Time, error) {
-	var testFlag = Flag{
+	var testFlag = Flag1{
 		"test",
 		true,
 		[]RuleInfo{
@@ -396,7 +396,7 @@ type dummyAgeBackend struct {
 }
 
 func (b *dummyAgeBackend) Refresh() ([]Flag, time.Time, error) {
-	var testFlag = Flag{
+	var testFlag = Flag1{
 		"go.sun.money",
 		true,
 		[]RuleInfo{},

@@ -9,13 +9,28 @@ import (
 	"sort"
 )
 
-type Flag struct {
+type Flag interface {
+	FlagName() string
+	Enabled(rnd randFunc, properties map[string]string) (bool, error)
+	Equal(other Flag) bool
+}
+
+type Flag1 struct {
 	Name   string
 	Active bool
 	Rules  []RuleInfo
 }
 
-func (f Flag) Equal(o Flag) bool {
+func (f Flag1) FlagName() string {
+	return f.Name
+}
+
+func (f Flag1) Equal(other Flag) bool {
+	o, ok := other.(Flag1)
+	if !ok {
+		return false
+	}
+
 	if f.Name != o.Name || f.Active != o.Active || len(f.Rules) != len(o.Rules) {
 		return false
 	}
@@ -61,7 +76,7 @@ type RateRule struct {
 	Properties []string
 }
 
-func (flag Flag) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
+func (flag Flag1) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
 	// if flag is inactive, always return false
 	if !flag.Active {
 		return false, nil
