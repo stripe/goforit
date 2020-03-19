@@ -60,8 +60,8 @@ func TestFlags2Parse(t *testing.T) {
 						HashBy:  "token",
 						Percent: 1.0,
 						Predicates: []Predicate2{
-							{Attribute: "token", Operation: OpIn, Values: []string{"id_1", "id_2"}},
-							{Attribute: "country", Operation: OpNotIn, Values: []string{"KP"}},
+							{Attribute: "token", Operation: OpIn, Values: map[string]bool{"id_1": true, "id_2": true}},
+							{Attribute: "country", Operation: OpNotIn, Values: map[string]bool{"KP": true}},
 						},
 					},
 					{HashBy: "token", Percent: 0.5, Predicates: []Predicate2{}},
