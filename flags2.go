@@ -3,6 +3,7 @@ package goforit
 import "encoding/json"
 
 type Operation2 string
+type Attributes2 map[string]string
 
 const (
 	OpIn      Operation2 = "in"
@@ -50,7 +51,7 @@ func (p *Predicate2) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (f Flag2) Evaluate(attributes map[string]string) bool {
+func (f Flag2) Evaluate(attributes Attributes2) (bool, error) {
 	// TODO
-	return true
+	return true, nil
 }

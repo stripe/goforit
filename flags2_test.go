@@ -94,7 +94,8 @@ func TestFlags2Acceptance(t *testing.T) {
 
 	for _, tc := range acceptanceData.TestCases {
 		t.Run(tc.Message, func(t *testing.T) {
-			actual := flags[tc.Flag].Evaluate(tc.Attrs)
+			actual, err := flags[tc.Flag].Evaluate(tc.Attrs)
+			assert.NoError(t, err)
 			assert.Equal(t, tc.Expected, actual)
 		})
 	}
