@@ -40,6 +40,7 @@ type Goforit interface {
 }
 
 type printFunc func(msg string, args ...interface{})
+type randFunc func() float64
 
 type goforit struct {
 	ticker *time.Ticker
@@ -221,7 +222,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	}
 
 	var err error
-	enabled, err = flag.flag.Enabled(mergedProperties)
+	enabled, err = flag.flag.Enabled(g.rand, mergedProperties)
 	if err != nil {
 		g.printf(err.Error())
 	}

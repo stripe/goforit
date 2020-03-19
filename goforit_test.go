@@ -128,11 +128,11 @@ func TestEnabled(t *testing.T) {
 type OnRule struct{}
 type OffRule struct{}
 
-func (r *OnRule) Handle(flag string, props map[string]string) (bool, error) {
+func (r *OnRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
 	return true, nil
 }
 
-func (r *OffRule) Handle(flag string, props map[string]string) (bool, error) {
+func (r *OffRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
 	return false, nil
 }
 

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
 )
 
@@ -49,7 +48,7 @@ type RuleInfo struct {
 }
 
 type Rule interface {
-	Handle(flag string, props map[string]string) (bool, error)
+	Handle(rnd randFunc, flag string, props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
@@ -62,7 +61,7 @@ type RateRule struct {
 	Properties []string
 }
 
-func (flag Flag) Enabled(properties map[string]string) (bool, error) {
+func (flag Flag) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
 	// if flag is inactive, always return false
 	if !flag.Active {
 		return false, nil
@@ -73,7 +72,7 @@ func (flag Flag) Enabled(properties map[string]string) (bool, error) {
 	}
 
 	for _, r := range flag.Rules {
-		res, err := r.Rule.Handle(flag.Name, properties)
+		res, err := r.Rule.Handle(rnd, flag.Name, properties)
 		if err != nil {
 			return false, fmt.Errorf("error evaluating rule:\n %v", err)
 		}
@@ -105,7 +104,7 @@ func getProperty(props map[string]string, prop string) (string, error) {
 	}
 }
 
-func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
+func (r *RateRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
@@ -129,12 +128,12 @@ func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 		// is less than (rate * 2^32)
 		return float64(x) < (r.Rate * float64(1<<32)), nil
 	} else {
-		f := rand.Float64()
+		f := rnd()
 		return f < r.Rate, nil
 	}
 }
 
-func (r *MatchListRule) Handle(flag string, props map[string]string) (bool, error) {
+func (r *MatchListRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
 	prop, err := getProperty(props, r.Property)
 	if err != nil {
 		return false, err
