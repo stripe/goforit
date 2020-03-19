@@ -228,29 +228,34 @@ func TestRefreshTicker(t *testing.T) {
 	}
 }
 
-// BenchmarkEnabled50 runs a benchmark for a feature flag
-// that is enabled for 50% of operations.
-func BenchmarkEnabled50(b *testing.B) {
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
-	defer g.Close()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = g.Enabled(context.Background(), "go.stars.money", nil)
+func BenchmarkEnabled(b *testing.B) {
+	backends := []struct {
+		name    string
+		backend Backend
+	}{
+		{"csv", BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))},
+		{"json2", BackendFromJSONFile2(filepath.Join("fixtures", "flags2_example.json"))},
 	}
-}
+	flags := []struct {
+		name string
+		flag string
+	}{
+		{"50pct", "go.stars.money"},
+		{"on", "go.moon.mercury"},
+	}
 
-// BenchmarkEnabled100 runs a benchmark for a feature flag
-// that is enabled for 100% of operations.
-func BenchmarkEnabled100(b *testing.B) {
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
-	defer g.Close()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = g.Enabled(context.Background(), "go.moon.mercury", nil)
+	for _, backend := range backends {
+		for _, flag := range flags {
+			name := fmt.Sprintf("%s/%s", backend.name, flag.name)
+			b.Run(name, func(b *testing.B) {
+				g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
+				defer g.Close()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_ = g.Enabled(context.Background(), flag.flag, nil)
+				}
+			})
+		}
 	}
 }
 
