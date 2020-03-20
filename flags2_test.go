@@ -1,11 +1,13 @@
 package goforit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,9 +64,7 @@ func TestFlags2Backend(t *testing.T) {
 	assert.Equal(t, int64(1584642857), updated.Unix())
 }
 
-func TestFlags2Acceptance(t *testing.T) {
-	t.Parallel()
-
+func flags2AcceptanceTests(t *testing.T, f func(t *testing.T, flagname string, flag Flag2, properties map[string]string, expected bool, msg string)) {
 	path := filepath.Join("fixtures", "flags2_acceptance.json")
 	buf, err := ioutil.ReadFile(path)
 	require.NoError(t, err)
@@ -84,16 +84,54 @@ func TestFlags2Acceptance(t *testing.T) {
 			t.Parallel()
 
 			// We don't distinguish between missing/nil values
-			attrs := map[string]string{}
+			properties := map[string]string{}
 			for k, v := range tc.Attrs {
 				if v != nil {
-					attrs[k] = *v
+					properties[k] = *v
 				}
 			}
 
-			actual, err := flags[tc.Flag].Enabled(nil, attrs)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.Expected, actual, "%q %q", tc.Flag, tc.Attrs)
+			msg := fmt.Sprintf("%s %v", tc.Flag, tc.Attrs)
+			f(t, tc.Flag, flags[tc.Flag], properties, tc.Expected, msg)
 		})
 	}
+
+}
+
+func TestFlags2Acceptance(t *testing.T) {
+	t.Parallel()
+
+	flags2AcceptanceTests(t, func(t *testing.T, flagname string, flag Flag2, properties map[string]string, expected bool, msg string) {
+		enabled, err := flag.Enabled(nil, properties)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, enabled, msg)
+	})
+}
+
+func TestFlags2AcceptanceClamp(t *testing.T) {
+	t.Parallel()
+
+	flags2AcceptanceTests(t, func(t *testing.T, flagname string, flag Flag2, properties map[string]string, expected bool, msg string) {
+		clamp := flag.Clamp()
+		switch clamp {
+		case FlagAlwaysOn:
+			assert.True(t, expected, msg)
+		case FlagAlwaysOff:
+			assert.False(t, expected, msg)
+		}
+	})
+}
+
+func TestFlags2AcceptanceEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("fixtures", "flags2_acceptance.json")
+	backend := BackendFromJSONFile2(path)
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	defer g.Close()
+
+	flags2AcceptanceTests(t, func(t *testing.T, flagname string, flag Flag2, properties map[string]string, expected bool, msg string) {
+		enabled := g.Enabled(context.Background(), flagname, properties)
+		assert.Equal(t, expected, enabled, msg)
+	})
 }
