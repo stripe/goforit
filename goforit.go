@@ -126,6 +126,7 @@ func (g *goforit) rand() float64 {
 
 type flagHolder struct {
 	flag          Flag
+	clamp         FlagClamp
 	enabledTicker *time.Ticker
 }
 
@@ -217,21 +218,35 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		return
 	}
 
-	mergedProperties := make(map[string]string)
-	g.defaultTags.Range(func(k, v interface{}) bool {
-		mergedProperties[k.(string)] = v.(string)
-		return true
-	})
-	for k, v := range properties {
-		mergedProperties[k] = v
-	}
+	switch flag.clamp {
+	case FlagAlwaysOff:
+		enabled = false
+	case FlagAlwaysOn:
+		enabled = true
+	default:
+		mergedProperties := make(map[string]string)
+		g.defaultTags.Range(func(k, v interface{}) bool {
+			mergedProperties[k.(string)] = v.(string)
+			return true
+		})
+		for k, v := range properties {
+			mergedProperties[k] = v
+		}
 
-	var err error
-	enabled, err = flag.flag.Enabled(g.rand, mergedProperties)
-	if err != nil {
-		g.printf(err.Error())
+		var err error
+		enabled, err = flag.flag.Enabled(g.rand, mergedProperties)
+		if err != nil {
+			g.printf(err.Error())
+		}
 	}
 	return
+}
+
+func (g *goforit) newHolder(flag Flag, ticker *time.Ticker) flagHolder {
+	if ticker == nil {
+		ticker = time.NewTicker(g.enabledTickerInterval)
+	}
+	return flagHolder{flag: flag, clamp: flag.Clamp(), enabledTicker: ticker}
 }
 
 // RefreshFlags will use the provided thunk function to
@@ -268,12 +283,10 @@ func (g *goforit) RefreshFlags(backend Backend) {
 			// Avoid churning the map if the flag hasn't changed.
 			oldHolder := oldFlag.(flagHolder)
 			if !oldHolder.flag.Equal(flag) {
-				holder := flagHolder{flag: flag, enabledTicker: oldHolder.enabledTicker}
-				g.flags.Store(name, holder)
+				g.flags.Store(name, g.newHolder(flag, oldHolder.enabledTicker))
 			}
 		} else {
-			holder := flagHolder{flag: flag, enabledTicker: time.NewTicker(g.enabledTickerInterval)}
-			g.flags.Store(name, holder)
+			g.flags.Store(name, g.newHolder(flag, nil))
 		}
 	}
 

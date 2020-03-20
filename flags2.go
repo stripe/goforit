@@ -89,6 +89,20 @@ func (f Flag2) Enabled(rnd randFunc, properties map[string]string) (bool, error)
 	return false, nil
 }
 
+func (f Flag2) Clamp() FlagClamp {
+	if len(f.Rules) == 0 {
+		return FlagAlwaysOff
+	}
+	if len(f.Rules) == 1 && len(f.Rules[0].Predicates) == 0 {
+		if f.Rules[0].Percent <= PercentOff {
+			return FlagAlwaysOff
+		} else if f.Rules[0].Percent >= PercentOn {
+			return FlagAlwaysOn
+		}
+	}
+	return FlagMayVary
+}
+
 func (p Predicate2) equal(o Predicate2) bool {
 	if p.Attribute != o.Attribute || p.Operation != o.Operation || len(p.Values) != len(o.Values) {
 		return false

@@ -9,10 +9,22 @@ import (
 	"sort"
 )
 
+// Is a flag clamped to on or off, or can it vary?
+type FlagClamp int
+
+const (
+	FlagAlwaysOff FlagClamp = iota
+	FlagAlwaysOn
+	FlagMayVary
+)
+
 type Flag interface {
 	FlagName() string
 	Enabled(rnd randFunc, properties map[string]string) (bool, error)
 	Equal(other Flag) bool
+
+	// Yield if a flag is always on/off, for optimization
+	Clamp() FlagClamp
 }
 
 type Flag1 struct {
@@ -74,6 +86,32 @@ type MatchListRule struct {
 type RateRule struct {
 	Rate       float64
 	Properties []string
+}
+
+func (f Flag1) Clamp() FlagClamp {
+	if !f.Active {
+		return FlagAlwaysOff
+	}
+	if len(f.Rules) == 0 {
+		return FlagAlwaysOn
+	}
+	if len(f.Rules) == 1 {
+		rule := f.Rules[0]
+		if rate, ok := rule.Rule.(*RateRule); ok {
+			action := RuleContinue
+			if rate.Rate <= 0.0 {
+				action = rule.OnMiss
+			} else if rate.Rate >= 1.0 {
+				action = rule.OnMatch
+			}
+			if action == RuleOn {
+				return FlagAlwaysOn
+			} else if action == RuleOff {
+				return FlagAlwaysOff
+			}
+		}
+	}
+	return FlagMayVary
 }
 
 func (flag Flag1) Enabled(rnd randFunc, properties map[string]string) (bool, error) {

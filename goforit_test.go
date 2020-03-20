@@ -191,7 +191,7 @@ func TestRefreshTicker(t *testing.T) {
 	defer g.Close()
 
 	earthTicker := time.NewTicker(time.Nanosecond)
-	g.flags.Store("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, earthTicker})
+	g.flags.Store("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, FlagMayVary, earthTicker})
 	f, ok := g.flags.Load("go.moon.mercury")
 	assert.True(t, ok)
 	moonTicker := f.(flagHolder).enabledTicker
