@@ -24,23 +24,20 @@ func TestParseFlagsCSV(t *testing.T) {
 			Name:     "BasicExample",
 			Filename: filepath.Join("fixtures", "flags_example.csv"),
 			Expected: []Flag{
-				{
+				Flag1{
 					"go.sun.money",
 					true,
 					[]RuleInfo{{&RateRule{Rate: 0}, RuleOn, RuleOff}},
-					nil,
 				},
-				{
+				Flag1{
 					"go.moon.mercury",
 					true,
 					nil,
-					nil,
 				},
-				{
+				Flag1{
 					"go.stars.money",
 					true,
 					[]RuleInfo{{&RateRule{Rate: 0.5}, RuleOn, RuleOff}},
-					nil,
 				},
 			},
 		},
@@ -75,7 +72,7 @@ func TestParseFlagsJSON(t *testing.T) {
 			Name:     "BasicExample",
 			Filename: filepath.Join("fixtures", "flags_example.json"),
 			Expected: []Flag{
-				{
+				Flag1{
 					"go.sun.moon",
 					true,
 					[]RuleInfo{
@@ -83,15 +80,13 @@ func TestParseFlagsJSON(t *testing.T) {
 						{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOn, RuleContinue},
 						{&RateRule{0.01, []string{"cluster", "db"}}, RuleOn, RuleOff},
 					},
-					nil,
 				},
-				{
+				Flag1{
 					"go.sun.mercury",
 					true,
 					[]RuleInfo{
 						{&RateRule{Rate: 0.5}, RuleOn, RuleOff},
 					},
-					nil,
 				},
 			},
 		},
@@ -122,8 +117,7 @@ func TestMultipleDefinitions(t *testing.T) {
 
 	f, ok := g.flags.Load(repeatedFlag)
 	assert.True(t, ok)
-	flag := f.(Flag)
-	flag.enabledTicker = nil // we don't compare about comparing this
-	assert.Equal(t, flag, Flag{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}, nil})
+	flag := f.(flagHolder).flag
+	assert.Equal(t, flag, Flag1{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
 
 }

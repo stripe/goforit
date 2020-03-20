@@ -24,6 +24,10 @@ type jsonFileBackend struct {
 	filename string
 }
 
+type jsonFileBackend2 struct {
+	filename string
+}
+
 type flagJson struct {
 	Name   string
 	Active bool
@@ -37,8 +41,8 @@ type ruleInfoJson struct {
 	OnMiss  RuleAction `json:"on_miss"`
 }
 
-type JSONFormat struct {
-	Flags       []Flag  `json:"flags"`
+type JSONFormat1 struct {
+	Flags       []Flag1 `json:"flags"`
 	UpdatedTime float64 `json:"updated"`
 }
 
@@ -46,7 +50,7 @@ type JSONFormat struct {
 //simple flags that specify only Name and Rate (at least for the time being).Instead of using
 // versions to formalize this, we will write some simple logic in a custom Unmarshaler to handle
 // both cases
-func (ri *Flag) UnmarshalJSON(buf []byte) error {
+func (ri *Flag1) UnmarshalJSON(buf []byte) error {
 	var raw flagJson
 	err := json.Unmarshal(buf, &raw)
 	if err != nil {
@@ -140,7 +144,7 @@ func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 			rate = 0
 		}
 
-		f := Flag{
+		f := Flag1{
 			Name:   name,
 			Active: true,
 		}
@@ -156,12 +160,18 @@ func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 
 func parseFlagsJSON(r io.Reader) ([]Flag, time.Time, error) {
 	dec := json.NewDecoder(r)
-	var v JSONFormat
+	var v JSONFormat1
 	err := dec.Decode(&v)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	return v.Flags, time.Unix(int64(v.UpdatedTime), 0), nil
+
+	flags := make([]Flag, len(v.Flags))
+	for i, f := range v.Flags {
+		flags[i] = f
+	}
+
+	return flags, time.Unix(int64(v.UpdatedTime), 0), nil
 }
 
 // BackendFromFile is a helper function that creates a valid

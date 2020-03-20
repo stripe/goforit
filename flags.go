@@ -2,138 +2,47 @@ package goforit
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
-	"math/rand"
-	"os"
 	"sort"
-	"sync"
-	"sync/atomic"
-	"time"
-
-	"github.com/DataDog/datadog-go/statsd"
 )
 
-// The default statsd address to emit metrics to.
-const DefaultStatsdAddr = "127.0.0.1:8200"
+// Is a flag clamped to on or off, or can it vary?
+type FlagClamp int
 
-const lastAssertInterval = 5 * time.Minute
+const (
+	FlagAlwaysOff FlagClamp = iota
+	FlagAlwaysOn
+	FlagMayVary
+)
 
-const enabledTickerInterval = 10 * time.Second
+type Flag interface {
+	FlagName() string
+	Enabled(rnd randFunc, properties map[string]string) (bool, error)
+	Equal(other Flag) bool
 
-// StatsdClient is the set of methods required to emit metrics to statsd, for
-// customizing behavior or mocking.
-type StatsdClient interface {
-	Histogram(string, float64, []string, float64) error
-	Gauge(string, float64, []string, float64) error
-	Count(string, int64, []string, float64) error
-	SimpleServiceCheck(string, statsd.ServiceCheckStatus) error
+	// Yield if a flag is always on/off, for optimization
+	Clamp() FlagClamp
 }
 
-// Goforit is the main interface for the library to check if flags enabled, refresh flags
-// customizing behavior or mocking.
-type Goforit interface {
-	Enabled(ctx context.Context, name string, props map[string]string) (enabled bool)
-	RefreshFlags(backend Backend)
-	SetStalenessThreshold(threshold time.Duration)
-	AddDefaultTags(tags map[string]string)
-	Close() error
+type Flag1 struct {
+	Name   string
+	Active bool
+	Rules  []RuleInfo
 }
 
-type goforit struct {
-	ticker *time.Ticker
-
-	stalenessMtx       sync.RWMutex
-	stalenessThreshold time.Duration
-
-	flags sync.Map
-
-	enabledTickerInterval time.Duration
-	// If a flag doesn't exist, this shared ticker will be used.
-	enabledTicker *time.Ticker
-
-	// Unix time in nanos.
-	lastFlagRefreshTime int64
-
-	defaultTags sync.Map
-
-	stats StatsdClient
-
-	// Last time we alerted that flags may be out of date
-	lastAssertMtx sync.Mutex
-	lastAssert    time.Time
-
-	// rand is not concurrency safe, in general
-	rndMtx sync.Mutex
-	rnd    *rand.Rand
-
-	printf func(msg string, args ...interface{})
+func (f Flag1) FlagName() string {
+	return f.Name
 }
 
-const DefaultInterval = 30 * time.Second
-
-func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
-	stats, _ := statsd.New(DefaultStatsdAddr)
-	return &goforit{
-		stats:                 stats,
-		enabledTickerInterval: enabledTickerInterval,
-		enabledTicker:         time.NewTicker(enabledTickerInterval),
-		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
-		printf:                log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
+func (f Flag1) Equal(other Flag) bool {
+	o, ok := other.(Flag1)
+	if !ok {
+		return false
 	}
-}
 
-// New creates a new goforit
-func New(interval time.Duration, backend Backend, opts ...Option) Goforit {
-	g := newWithoutInit(enabledTickerInterval)
-	g.init(interval, backend, opts...)
-	return g
-}
-
-type Option interface {
-	apply(g *goforit)
-}
-
-type optionFunc func(g *goforit)
-
-func (o optionFunc) apply(g *goforit) {
-	o(g)
-}
-
-// Logger uses the supplied function to log errors. By default, errors are
-// written to os.Stderr.
-func Logger(printf func(msg string, args ...interface{})) Option {
-	return optionFunc(func(g *goforit) {
-		g.printf = printf
-	})
-}
-
-// Statsd uses the supplied client to emit metrics to. By default, a client is
-// created and configured to emit metrics to DefaultStatsdAddr.
-func Statsd(stats StatsdClient) Option {
-	return optionFunc(func(g *goforit) {
-		g.stats = stats
-	})
-}
-
-func (g *goforit) rand() float64 {
-	g.rndMtx.Lock()
-	defer g.rndMtx.Unlock()
-	return g.rnd.Float64()
-}
-
-type Flag struct {
-	Name          string
-	Active        bool
-	Rules         []RuleInfo
-	enabledTicker *time.Ticker
-}
-
-func (f Flag) Equal(o Flag) bool {
 	if f.Name != o.Name || f.Active != o.Active || len(f.Rules) != len(o.Rules) {
 		return false
 	}
@@ -166,7 +75,7 @@ type RuleInfo struct {
 }
 
 type Rule interface {
-	Handle(flag string, props map[string]string) (bool, error)
+	Handle(rnd randFunc, flag string, props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
@@ -179,114 +88,46 @@ type RateRule struct {
 	Properties []string
 }
 
-func (g *goforit) getStalenessThreshold() time.Duration {
-	g.stalenessMtx.RLock()
-	defer g.stalenessMtx.RUnlock()
-	return g.stalenessThreshold
-}
-
-func (g *goforit) logStaleCheck() bool {
-	g.lastAssertMtx.Lock()
-	defer g.lastAssertMtx.Unlock()
-	if time.Since(g.lastAssert) < lastAssertInterval {
-		return false
+func (f Flag1) Clamp() FlagClamp {
+	if !f.Active {
+		return FlagAlwaysOff
 	}
-	g.lastAssert = time.Now()
-	return true
-}
-
-// Check if a time is stale.
-func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg string, checkLastAssert bool) {
-	if t.IsZero() {
-		// Not really useful to treat this as a real time
-		return
+	if len(f.Rules) == 0 {
+		return FlagAlwaysOn
 	}
-
-	// Report the staleness
-	staleness := time.Since(t)
-	g.stats.Histogram(metric, staleness.Seconds(), nil, metricRate)
-
-	// Log if we're old
-	thresh := g.getStalenessThreshold()
-	if thresh == 0 {
-		return
-	}
-	if staleness <= thresh {
-		return
-	}
-	// Don't log too often!
-	if !checkLastAssert || g.logStaleCheck() {
-		g.printf(msg, staleness, thresh)
-	}
-}
-
-// Enabled returns a boolean indicating
-// whether or not the flag should be considered
-// enabled. It returns false if no flag with the specified
-// name is found
-func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
-	enabled = false
-	f, ok := g.flags.Load(name)
-	var flag Flag
-	var tickerC <-chan time.Time
-	if ok {
-		flag = f.(Flag)
-		tickerC = flag.enabledTicker.C
-	} else {
-		tickerC = g.enabledTicker.C
-	}
-
-	select {
-	case <-tickerC:
-		defer func() {
-			var gauge float64
-			if enabled {
-				gauge = 1
+	if len(f.Rules) == 1 {
+		rule := f.Rules[0]
+		if rate, ok := rule.Rule.(*RateRule); ok {
+			action := RuleContinue
+			if rate.Rate <= 0.0 {
+				action = rule.OnMiss
+			} else if rate.Rate >= 1.0 {
+				action = rule.OnMatch
 			}
-			g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, 1)
-			last := atomic.LoadInt64(&g.lastFlagRefreshTime)
-			// time.Duration is conveniently measured in nanoseconds.
-			lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
-			g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", 1,
-				"Refresh cycle has not run in %s, past our threshold (%s)", true)
-		}()
-	default:
-	}
-
-	// Check for an override.
-	if ctx != nil {
-		if ov, ok := ctx.Value(overrideContextKey).(overrides); ok {
-			if enabled, ok = ov[name]; ok {
-				return
+			if action == RuleOn {
+				return FlagAlwaysOn
+			} else if action == RuleOff {
+				return FlagAlwaysOff
 			}
 		}
 	}
+	return FlagMayVary
+}
 
+func (flag Flag1) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
 	// if flag is inactive, always return false
 	if !flag.Active {
-		return
+		return false, nil
 	}
-
 	// if there are no rules, but flag is active, always return true
 	if len(flag.Rules) == 0 {
-		enabled = true
-		return
-	}
-
-	mergedProperties := make(map[string]string)
-	g.defaultTags.Range(func(k, v interface{}) bool {
-		mergedProperties[k.(string)] = v.(string)
-		return true
-	})
-	for k, v := range properties {
-		mergedProperties[k] = v
+		return true, nil
 	}
 
 	for _, r := range flag.Rules {
-		res, err := r.Rule.Handle(flag.Name, mergedProperties)
+		res, err := r.Rule.Handle(rnd, flag.Name, properties)
 		if err != nil {
-			g.printf("error evaluating rule:\n %s", err)
-			return
+			return false, fmt.Errorf("error evaluating rule:\n %v", err)
 		}
 		var matchBehavior RuleAction
 		if res {
@@ -296,20 +137,16 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		}
 		switch matchBehavior {
 		case RuleOn:
-			enabled = true
-			return
+			return true, nil
 		case RuleOff:
-			enabled = false
-			return
+			return false, nil
 		case RuleContinue:
 			continue
 		default:
-			g.printf("unknown match behavior: " + string(matchBehavior))
-			return
+			return false, fmt.Errorf("unknown match behavior: " + string(matchBehavior))
 		}
 	}
-	enabled = false
-	return
+	return false, nil
 }
 
 func getProperty(props map[string]string, prop string) (string, error) {
@@ -320,7 +157,7 @@ func getProperty(props map[string]string, prop string) (string, error) {
 	}
 }
 
-func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
+func (r *RateRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
@@ -344,12 +181,12 @@ func (r *RateRule) Handle(flag string, props map[string]string) (bool, error) {
 		// is less than (rate * 2^32)
 		return float64(x) < (r.Rate * float64(1<<32)), nil
 	} else {
-		f := rand.Float64()
+		f := rnd()
 		return f < r.Rate, nil
 	}
 }
 
-func (r *MatchListRule) Handle(flag string, props map[string]string) (bool, error) {
+func (r *MatchListRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
 	prop, err := getProperty(props, r.Property)
 	if err != nil {
 		return false, err
@@ -361,131 +198,3 @@ func (r *MatchListRule) Handle(flag string, props map[string]string) (bool, erro
 	}
 	return false, nil
 }
-
-// RefreshFlags will use the provided thunk function to
-// fetch all feature flags and update the internal cache.
-// The thunk provided can use a variety of mechanisms for
-// querying the flag values, such as a local file or
-// Consul key/value storage.
-func (g *goforit) RefreshFlags(backend Backend) {
-	// Ask the backend for the flags
-	var checkStatus statsd.ServiceCheckStatus
-	defer func() {
-		g.stats.SimpleServiceCheck("goforit.refreshFlags.present", checkStatus)
-	}()
-	refreshedFlags, updated, err := backend.Refresh()
-	if err != nil {
-		checkStatus = statsd.Warn
-		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
-		g.printf("Error refreshing flags: %s", err)
-		return
-	}
-	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
-
-	deleted := make(map[string]bool)
-	g.flags.Range(func(name, flag interface{}) bool {
-		deleted[name.(string)] = true
-		return true
-	})
-
-	for _, flag := range refreshedFlags {
-		delete(deleted, flag.Name)
-		oldFlag, ok := g.flags.Load(flag.Name)
-		if ok {
-			// Avoid churning the map if the flag hasn't changed.
-			if !oldFlag.(Flag).Equal(flag) {
-				flag.enabledTicker = oldFlag.(Flag).enabledTicker
-				g.flags.Store(flag.Name, flag)
-			}
-		} else {
-			flag.enabledTicker = time.NewTicker(g.enabledTickerInterval)
-			g.flags.Store(flag.Name, flag)
-		}
-	}
-
-	for name := range deleted {
-		f, ok := g.flags.Load(name)
-		if ok {
-			f.(Flag).enabledTicker.Stop()
-			g.flags.Delete(name)
-		}
-	}
-
-	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
-		"Backend is stale (%s) past our threshold (%s)", false)
-
-	return
-}
-
-func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
-	g.stalenessMtx.Lock()
-	defer g.stalenessMtx.Unlock()
-	g.stalenessThreshold = threshold
-}
-
-func (g *goforit) AddDefaultTags(tags map[string]string) {
-	for k, v := range tags {
-		g.defaultTags.Store(k, v)
-	}
-}
-
-// init initializes the flag backend, using the provided refresh function
-// to update the internal cache of flags periodically, at the specified interval.
-// Applies passed initialization options to the goforit instance.
-func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) {
-	for _, opt := range opts {
-		opt.apply(g)
-	}
-
-	g.RefreshFlags(backend)
-	if interval != 0 {
-		ticker := time.NewTicker(interval)
-		g.ticker = ticker
-
-		go func() {
-			for range ticker.C {
-				g.RefreshFlags(backend)
-			}
-		}()
-	}
-}
-
-// A unique context key for overrides
-type overrideContextKeyType struct{}
-
-var overrideContextKey = overrideContextKeyType{}
-
-type overrides map[string]bool
-
-// Override allows overriding the value of a goforit flag within a context.
-// This is mainly useful for tests.
-func Override(ctx context.Context, name string, value bool) context.Context {
-	ov := overrides{}
-	if old, ok := ctx.Value(overrideContextKey).(overrides); ok {
-		for k, v := range old {
-			ov[k] = v
-		}
-	}
-	ov[name] = value
-	return context.WithValue(ctx, overrideContextKey, ov)
-}
-
-// Close releases resources held
-// It's still safe to call Enabled()
-func (g *goforit) Close() error {
-	if g.ticker != nil {
-		g.ticker.Stop()
-		g.ticker = nil
-
-		g.flags.Range(func(k, v interface{}) bool {
-			v.(Flag).enabledTicker.Stop()
-			return true
-		})
-
-		g.enabledTicker.Stop()
-	}
-	return nil
-}
-
-// for the interface compatability static check
-var _ Goforit = &goforit{}
