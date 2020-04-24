@@ -114,7 +114,16 @@ func readFile(file string, backend string, parse func(io.Reader) ([]Flag, time.T
 }
 
 func (b jsonFileBackend) Refresh() ([]Flag, time.Time, error) {
-	return readFile(b.filename, "json", parseFlagsJSON)
+	flags, updated, err := readFile(b.filename, "json", parseFlagsJSON)
+	if updated != time.Unix(0, 0) {
+		return flags, updated, err
+	}
+
+	fileInfo, err := os.Stat(b.filename)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return flags, fileInfo.ModTime(), nil
 }
 
 func (b csvFileBackend) Refresh() ([]Flag, time.Time, error) {

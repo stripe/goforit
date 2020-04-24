@@ -2,6 +2,8 @@ package goforit
 
 import (
 	"math/rand"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -253,4 +255,23 @@ func TestCascadingRules(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, tc.expected, enabled, tc.name)
 	}
+}
+
+func TestTimestampFallback(t *testing.T) {
+	backend := jsonFileBackend{
+		filename: filepath.Join("fixtures", "flags_example.json"),
+	}
+	_, updated, err := backend.Refresh()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1519247256), updated.Unix())
+
+	backendNoTimestamp := jsonFileBackend{
+		filename: filepath.Join("fixtures", "flags_example_no_timestamp.json"),
+	}
+	_, updated, err = backendNoTimestamp.Refresh()
+	assert.NoError(t, err)
+
+	info, err := os.Stat(filepath.Join("fixtures", "flags_example_no_timestamp.json"))
+	assert.NoError(t, err)
+	assert.Equal(t, info.ModTime(), updated)
 }
