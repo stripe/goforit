@@ -41,6 +41,7 @@ type Goforit interface {
 
 type printFunc func(msg string, args ...interface{})
 type randFunc func() float64
+type evaluationCallback func(flag string, active bool)
 
 type goforit struct {
 	ticker *time.Ticker
@@ -70,6 +71,7 @@ type goforit struct {
 	rnd    *rand.Rand
 
 	printf printFunc
+	evalCB evaluationCallback
 }
 
 const DefaultInterval = 30 * time.Second
@@ -115,6 +117,13 @@ func Logger(printf func(msg string, args ...interface{})) Option {
 func Statsd(stats StatsdClient) Option {
 	return optionFunc(func(g *goforit) {
 		g.stats = stats
+	})
+}
+
+// EvaluationCallback registers a callback to execute for each evaluated flag
+func EvaluationCallback(cb evaluationCallback) Option {
+	return optionFunc(func(g *goforit) {
+		g.evalCB = cb
 	})
 }
 
@@ -202,6 +211,10 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 				"Refresh cycle has not run in %s, past our threshold (%s)", true)
 		}()
 	default:
+	}
+	if g.evalCB != nil {
+		// Wrap in a func, so `enabled` is evaluated at return-time instead of when defer is called
+		defer func() { g.evalCB(name, enabled) }()
 	}
 
 	// Check for an override.
