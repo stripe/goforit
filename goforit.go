@@ -213,6 +213,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	default:
 	}
 	if g.evalCB != nil {
+		// Wrap in a func, so `enabled` is evaluated at return-time instead of when defer is called
 		defer func() { g.evalCB(name, enabled) }()
 	}
 
