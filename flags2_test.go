@@ -80,19 +80,20 @@ func flags2AcceptanceTests(t *testing.T, f func(t *testing.T, flagname string, f
 
 	for _, tc := range acceptanceData.TestCases {
 		name := fmt.Sprintf("%s:%s", tc.Flag, tc.Message)
+		dup := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			// We don't distinguish between missing/nil values
 			properties := map[string]string{}
-			for k, v := range tc.Attrs {
+			for k, v := range dup.Attrs {
 				if v != nil {
 					properties[k] = *v
 				}
 			}
 
-			msg := fmt.Sprintf("%s %v", tc.Flag, tc.Attrs)
-			f(t, tc.Flag, flags[tc.Flag], properties, tc.Expected, msg)
+			msg := fmt.Sprintf("%s %v", dup.Flag, dup.Attrs)
+			f(t, dup.Flag, flags[dup.Flag], properties, dup.Expected, msg)
 		})
 	}
 
