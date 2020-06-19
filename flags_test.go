@@ -1,6 +1,7 @@
 package goforit
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -77,7 +78,7 @@ func TestRateRule(t *testing.T) {
 	var r = RateRule{0.5, []string{"a", "b", "c"}}
 	for a := 0; a < 100; a++ {
 		for b := 0; b < 100; b++ {
-			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			props := map[string]string{"a": fmt.Sprint(a), "b": fmt.Sprint(b), "c": "a"}
 			match, err := r.Handle(rnd, "test", props)
 			assert.Nil(t, err)
 			if match {
@@ -92,7 +93,7 @@ func TestRateRule(t *testing.T) {
 
 	for a := 0; a < 100; a++ {
 		for b := 0; b < 100; b++ {
-			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			props := map[string]string{"a": fmt.Sprint(a), "b": fmt.Sprint(b), "c": "a"}
 			match, err := r.Handle(rnd, "test", props)
 			assert.Nil(t, err)
 			assert.Equal(t, results[resultKey{a, b}], match)
@@ -104,7 +105,7 @@ func TestRateRule(t *testing.T) {
 	disagree := 0
 	for a := 0; a < 100; a++ {
 		for b := 0; b < 100; b++ {
-			props := map[string]string{"a": string(a), "b": string(b), "c": "a"}
+			props := map[string]string{"a": fmt.Sprint(a), "b": fmt.Sprint(b), "c": "a"}
 			match, err := r.Handle(rnd, "test2", props)
 			assert.Nil(t, err)
 			if results[resultKey{a, b}] != match {
