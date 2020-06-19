@@ -87,6 +87,24 @@
         ]},
         {"hash_by": "token", "percent": 1.0, "predicates": []}
       ]
+    },
+    {
+      "name": "deleted_on_flag",
+      "seed": "deleted_on_flag",
+      "_id": "ff_deleted_on_flag",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": []}
+      ],
+      "deleted": true
+    },
+    {
+      "name": "explicitly_not_deleted_flag",
+      "seed": "explicitly_not_deleted_flag",
+      "_id": "ff_explicitly_not_deleted",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": []}
+      ],
+      "deleted": false
     }
   ],
 
@@ -149,6 +167,9 @@
     {"flag": "off_flag_edge_override_off", "expected": false, "attrs": {"token" : "x", "foo" : "bar"}, "message": "always off, edge_override present only for validation"},
 
     {"flag": "bail_if_null_else_on", "expected": false, "attrs": {"token" : null}},
-    {"flag": "bail_if_null_else_on", "expected": true, "attrs": {"token" : "foo"}}
+    {"flag": "bail_if_null_else_on", "expected": true, "attrs": {"token" : "foo"}},
+
+    {"flag": "deleted_on_flag", "expected": true, "attrs": {}},
+    {"flag": "explicitly_not_deleted_flag", "expected": true, "attrs": {}}
   ]
 }
