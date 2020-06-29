@@ -38,9 +38,16 @@ type Rule2 struct {
 	Predicates []Predicate2
 }
 type Flag2 struct {
-	Name  string
-	Seed  string
-	Rules []Rule2
+	Name    string
+	Seed    string
+	Rules   []Rule2
+	Deleted bool
+}
+
+// DeletableFlag can report whether this flag is scheduled for deletion
+type deletableFlag interface {
+	// IsDeleted yields true if this flag is scheduled for deletion
+	isDeleted() bool
 }
 
 type JSONFormat2 struct {
@@ -144,6 +151,10 @@ func (f Flag2) Equal(other Flag) bool {
 		}
 	}
 	return true
+}
+
+func (f Flag2) isDeleted() bool {
+	return f.Deleted
 }
 
 func (p Predicate2) matches(properties map[string]string) (bool, error) {
