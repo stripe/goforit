@@ -70,8 +70,9 @@ type goforit struct {
 	rndMtx sync.Mutex
 	rnd    *rand.Rand
 
-	printf printFunc
-	evalCB evaluationCallback
+	printf    printFunc
+	evalCB    evaluationCallback
+	deletedCB evaluationCallback
 }
 
 const DefaultInterval = 30 * time.Second
@@ -124,6 +125,13 @@ func Statsd(stats StatsdClient) Option {
 func EvaluationCallback(cb evaluationCallback) Option {
 	return optionFunc(func(g *goforit) {
 		g.evalCB = cb
+	})
+}
+
+// DeletedCallback registers a callback to execute for each flag that is scheduled for deletion
+func DeletedCallback(cb evaluationCallback) Option {
+	return optionFunc(func(g *goforit) {
+		g.deletedCB = cb
 	})
 }
 
@@ -215,6 +223,11 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	if g.evalCB != nil {
 		// Wrap in a func, so `enabled` is evaluated at return-time instead of when defer is called
 		defer func() { g.evalCB(name, enabled) }()
+	}
+	if g.deletedCB != nil {
+		if df, ok := flag.flag.(deletableFlag); ok && df.isDeleted() {
+			defer func() { g.deletedCB(name, enabled) }()
+		}
 	}
 
 	// Check for an override.

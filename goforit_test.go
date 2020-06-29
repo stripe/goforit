@@ -584,3 +584,22 @@ func TestEvaluationCallback(t *testing.T) {
 	assert.Equal(t, 1, evaluated[flagStatus{"go.sun.money", false}])
 	assert.Equal(t, 2, evaluated[flagStatus{"go.moon.mercury", true}])
 }
+
+func TestDeletionCallback(t *testing.T) {
+	t.Parallel()
+
+	deleted := map[flagStatus]int{}
+	backend := BackendFromJSONFile2(filepath.Join("fixtures", "flags2_acceptance.json"))
+	g := New(enabledTickerInterval, backend, DeletedCallback(func(flag string, active bool) {
+		deleted[flagStatus{flag, active}] += 1
+	}))
+	defer g.Close()
+
+	g.Enabled(nil, "on_flag", nil)
+	g.Enabled(nil, "deleted_on_flag", nil)
+	g.Enabled(nil, "deleted_on_flag", nil)
+	g.Enabled(nil, "explicitly_not_deleted_flag", nil)
+
+	assert.Equal(t, 1, len(deleted))
+	assert.Equal(t, 2, deleted[flagStatus{"deleted_on_flag", true}])
+}
