@@ -1,11 +1,15 @@
 {
+  "README": "*** This file is synchronized across repos from pay-server. Do not modify this file manually outside of pay-server. ***",
   "version": 1,
   "flags": [
     {
       "name": "off_flag",
       "_id": "ff_1",
       "seed": "seed_1",
-      "rules": []
+      "rules": [],
+      "updated": 123.45,
+      "version": "123abc",
+      "should_be_ignored": "please"
     },
     {
       "name": "on_flag",
@@ -13,7 +17,9 @@
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": []}
-      ]
+      ],
+      "updated": 456.78,
+      "version": "456def"
     },
     {
       "name": "random_by_token_flag",
@@ -21,11 +27,13 @@
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.2, "predicates": []}
-      ]
+      ],
+      "updated": 0,
+      "version": "789ghi"
     },
     {
       "name": "random_by_token_flag_same_seed_increased_percent",
-      "_id": "ff_3",
+      "_id": "ff_4",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.8, "predicates": []}
@@ -33,7 +41,7 @@
     },
     {
       "name": "random_by_token_flag_different_seed",
-      "_id": "ff_4",
+      "_id": "ff_5",
       "seed": "seed_X",
       "rules": [
         {"hash_by": "token", "percent": 0.2, "predicates": []}
@@ -41,7 +49,7 @@
     },
     {
       "name": "blacklist_whitelist_by_token",
-      "_id": "ff_5",
+      "_id": "ff_6",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.0, "predicates": [
@@ -54,7 +62,7 @@
     },
     {
       "name": "country_ban",
-      "_id": "ff_5",
+      "_id": "ff_7",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": [
@@ -65,21 +73,21 @@
     },
     {
       "name": "off_flag_edge_override_on",
-      "_id": "ff_6",
+      "_id": "ff_8",
       "seed": "seed_1",
       "rules": [],
       "edge_override": true
     },
     {
       "name": "off_flag_edge_override_off",
-      "_id": "ff_6",
+      "_id": "ff_9",
       "seed": "seed_1",
       "rules": [],
       "edge_override": false
     },
     {
       "name": "bail_if_null_else_on",
-      "_id": "ff_5",
+      "_id": "ff_10",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.0, "predicates": [
@@ -89,9 +97,20 @@
       ]
     },
     {
+      "name": "country_with_multi_conditions",
+      "_id": "ff_11",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": [
+          {"attribute": "token", "operation": "in", "values": ["id_1", "id_2"]},
+          {"attribute": "country", "operation": "in", "values": ["US", "CA"]}
+        ]}
+      ]
+    },
+    {
       "name": "deleted_on_flag",
-      "seed": "deleted_on_flag",
-      "_id": "ff_deleted_on_flag",
+      "_id": "ff_12",
+      "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": []}
       ],
@@ -99,8 +118,8 @@
     },
     {
       "name": "explicitly_not_deleted_flag",
-      "seed": "explicitly_not_deleted_flag",
-      "_id": "ff_explicitly_not_deleted",
+      "_id": "ff_13",
+      "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": []}
       ],
@@ -168,6 +187,9 @@
 
     {"flag": "bail_if_null_else_on", "expected": false, "attrs": {"token" : null}},
     {"flag": "bail_if_null_else_on", "expected": true, "attrs": {"token" : "foo"}},
+
+    {"flag": "country_with_multi_conditions", "expected": false, "attrs": {"token": "id_1", "country": "JP"}, "message": "country not in whitelist"},
+    {"flag": "country_with_multi_conditions", "expected": true, "attrs": {"token": "id_1", "country": "US"}, "message": "country in whitelist"},
 
     {"flag": "deleted_on_flag", "expected": true, "attrs": {}},
     {"flag": "explicitly_not_deleted_flag", "expected": true, "attrs": {}}
