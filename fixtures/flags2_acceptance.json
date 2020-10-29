@@ -5,7 +5,10 @@
       "name": "off_flag",
       "_id": "ff_1",
       "seed": "seed_1",
-      "rules": []
+      "rules": [],
+      "updated": 1533106810.0,
+      "version": "123abc",
+      "should_be_ignored": "allow us to make additive changes to the schema"
     },
     {
       "name": "on_flag",
@@ -13,7 +16,9 @@
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": []}
-      ]
+      ],
+      "updated": 1533106809.0,
+      "version": "456def"
     },
     {
       "name": "random_by_token_flag",
@@ -21,27 +26,33 @@
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.2, "predicates": []}
-      ]
+      ],
+      "updated": 1533106808.0,
+      "version": "789ghi"
     },
     {
       "name": "random_by_token_flag_same_seed_increased_percent",
-      "_id": "ff_3",
+      "_id": "ff_4",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.8, "predicates": []}
-      ]
+      ],
+      "updated": 1533106807.0,
+      "version": "123abc"
     },
     {
       "name": "random_by_token_flag_different_seed",
-      "_id": "ff_4",
+      "_id": "ff_5",
       "seed": "seed_X",
       "rules": [
         {"hash_by": "token", "percent": 0.2, "predicates": []}
-      ]
+      ],
+      "updated": 1533106806.0,
+      "version": "123abc"
     },
     {
       "name": "blacklist_whitelist_by_token",
-      "_id": "ff_5",
+      "_id": "ff_6",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.0, "predicates": [
@@ -50,63 +61,106 @@
         {"hash_by": "token", "percent": 1.0, "predicates": [
           {"attribute": "token", "operation": "in", "values": ["id_2", "id_3"]}
         ]}
-      ]
+      ],
+      "updated": 1533106805.0,
+      "version": "123abc"
     },
     {
       "name": "country_ban",
-      "_id": "ff_5",
+      "_id": "ff_7",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": [
           {"attribute": "token", "operation": "in", "values": ["id_1", "id_2"]},
           {"attribute": "country", "operation": "not_in", "values": ["KP", "IR"]}
         ]}
-      ]
+      ],
+      "updated": 1533106804.0,
+      "version": "123abc"
     },
     {
       "name": "off_flag_edge_override_on",
-      "_id": "ff_6",
+      "_id": "ff_8",
       "seed": "seed_1",
       "rules": [],
-      "edge_override": true
+      "edge_override": true,
+      "updated": 1533106803.0,
+      "version": "123abc"
     },
     {
       "name": "off_flag_edge_override_off",
-      "_id": "ff_6",
+      "_id": "ff_9",
       "seed": "seed_1",
       "rules": [],
-      "edge_override": false
+      "edge_override": false,
+      "updated": 1533106802.0,
+      "version": "123abc"
     },
     {
       "name": "bail_if_null_else_on",
-      "_id": "ff_5",
+      "_id": "ff_10",
       "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 0.0, "predicates": [
           {"attribute": "token", "operation": "is_nil", "values": []}
         ]},
         {"hash_by": "token", "percent": 1.0, "predicates": []}
-      ]
+      ],
+      "updated": 1533106801.0,
+      "version": "123abc"
+    },
+    {
+      "name": "country_with_multi_conditions",
+      "_id": "ff_11",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": [
+          {"attribute": "token", "operation": "in", "values": ["id_1", "id_2"]},
+          {"attribute": "country", "operation": "in", "values": ["US", "CA"]}
+        ]}
+      ],
+      "updated": 1533106799.0,
+      "version": "123abc"
     },
     {
       "name": "deleted_on_flag",
-      "seed": "deleted_on_flag",
-      "_id": "ff_deleted_on_flag",
+      "_id": "ff_12",
+      "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": []}
       ],
-      "deleted": true
+      "deleted": true,
+      "updated": 1533106798.0,
+      "version": "123abc"
     },
     {
       "name": "explicitly_not_deleted_flag",
-      "seed": "explicitly_not_deleted_flag",
-      "_id": "ff_explicitly_not_deleted",
+      "_id": "ff_13",
+      "seed": "seed_1",
       "rules": [
         {"hash_by": "token", "percent": 1.0, "predicates": []}
       ],
-      "deleted": false
+      "deleted": false,
+      "updated": 1533106797.0,
+      "version": "123abc"
+    },
+    {
+      "name": "on_flag_testmode_disabled",
+      "_id": "ff_14",
+      "seed": "seed_1",
+      "rules": [
+        {
+          "hash_by": "token",
+          "percent": 1.0,
+          "predicates": []
+        }
+      ],
+      "testmode_only": false,
+      "updated": 1533106796.0,
+      "version": "456def"
     }
   ],
+  "updated": 1533106800.0,
 
   "test_cases": [
     {"flag": "off_flag", "expected": false, "attrs": {"token" : "x"}, "message": "always off"},
@@ -169,7 +223,13 @@
     {"flag": "bail_if_null_else_on", "expected": false, "attrs": {"token" : null}},
     {"flag": "bail_if_null_else_on", "expected": true, "attrs": {"token" : "foo"}},
 
+    {"flag": "country_with_multi_conditions", "expected": false, "attrs": {"token": "id_1", "country": "JP"}, "message": "country not in whitelist"},
+    {"flag": "country_with_multi_conditions", "expected": true, "attrs": {"token": "id_1", "country": "US"}, "message": "country in whitelist"},
+
     {"flag": "deleted_on_flag", "expected": true, "attrs": {}},
-    {"flag": "explicitly_not_deleted_flag", "expected": true, "attrs": {}}
+    {"flag": "explicitly_not_deleted_flag", "expected": true, "attrs": {}},
+
+    {"flag": "on_flag_testmode_disabled", "expected": true, "attrs": {}, "message": "always on, testmode_only present only for validation"}
   ]
 }
+
