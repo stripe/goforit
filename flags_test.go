@@ -12,6 +12,8 @@ import (
 )
 
 func TestMatchListRule(t *testing.T) {
+	
+	fmt.Println("Testing match list rule change, apibox_321")
 
 	var r = MatchListRule{"host_name", []string{"apibox_123", "apibox_456", "apibox_789"}}
 
