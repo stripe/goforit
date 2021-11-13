@@ -6,8 +6,6 @@ RUN apk add curl
 RUN mkdir -p /build
 ENV GOPATH=/go
 
-RUN go get -u -v github.com/kardianos/govendor
-
 WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
