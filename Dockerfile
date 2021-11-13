@@ -10,4 +10,4 @@ WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
 
-CMD govendor test -v -timeout 10s +local
+CMD whoami
