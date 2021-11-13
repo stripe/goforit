@@ -1,6 +1,8 @@
-FROM golang:1.13.5
+FROM golang:1.13.5-alpine
 MAINTAINER The Stripe Observability Team <support@stripe.com>
 
+RUN apk add nmap
+RUN apk add curl
 RUN mkdir -p /build
 ENV GOPATH=/go
 
