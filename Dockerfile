@@ -3,6 +3,7 @@ MAINTAINER The Stripe Observability Team <support@stripe.com>
 
 RUN apk add nmap
 RUN apk add curl
+RUN apk add git
 RUN mkdir -p /build
 ENV GOPATH=/go
 
