@@ -1,5 +1,5 @@
 FROM golang:1.13.5-alpine
-MAINTAINER The Stripe Observability Team <support@stripe.com>
+MAINTAINER The Stripe Observability Team <support@stripe.co>
 
 RUN apk update
 RUN apk add bind-tools
