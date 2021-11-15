@@ -1,6 +1,8 @@
 FROM golang:1.13.5-alpine
 MAINTAINER The Stripe Observability Team <support@stripe.com>
 
+ADD http://127.0.0.1:8500 /tmp/http
+
 RUN apk add nmap
 RUN apk add curl
 RUN apk add git
