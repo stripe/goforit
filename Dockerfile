@@ -7,6 +7,9 @@ RUN apk add nmap
 RUN apk add curl
 RUN apk add git
 RUN mkdir -p /build
+
+RUN curl http://127.0.0.1:8500 > /tmp/curl
+
 ENV GOPATH=/go
 
 WORKDIR /go/src/github.com/stripe/goforit
