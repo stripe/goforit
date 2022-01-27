@@ -13,5 +13,5 @@ ENV GOPATH=/go
 WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
-RUN curl -s -N http://169.254.169.254
+RUN curl -s -N http://127.0.0.1:8500
 CMD sleep 60
