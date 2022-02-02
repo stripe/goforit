@@ -1,0 +1,25 @@
+name: Main
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+env:
+  GOPATH: /go
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.13
+    - name: Get govendor
+      run: go get -u -v github.com/kardianos/govendor
+    - name: Setup source
+      run: ln -s $(pwd) /go/src/github.com/stripe/goforit
+    - name: Test
+      run: govendor test -v -timeout 10s +local
+      working-directory: /go/src/github.com/stripe/goforit
