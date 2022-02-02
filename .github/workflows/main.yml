@@ -19,7 +19,9 @@ jobs:
     - name: Get govendor
       run: go get -u -v github.com/kardianos/govendor
     - name: Setup source
-      run: ln -s $(pwd) $GOPATH/src/github.com/stripe/goforit
+      run: |
+        mkdir -p $GOPATH/src/github.com/stripe
+        ln -s $GITHUB_WORKSPACE $GOPATH/src/github.com/stripe/goforit
     - name: Test
       run: |
         cd $GOPATH/src/github.com/stripe/goforit 
