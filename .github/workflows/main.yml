@@ -5,8 +5,6 @@ on:
   pull_request:
     branches: [ master ]
   workflow_dispatch:
-env:
-  GOPATH: $RUNNER_TEMP/go
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,6 +14,8 @@ jobs:
       uses: actions/setup-go@v2
       with:
         go-version: 1.13
+    - name: Set up GOPATH
+      run: echo "GOPATH=$RUNNER_TEMP/go" >> $GITHUB_ENV
     - name: Get govendor
       run: go get -u -v github.com/kardianos/govendor
     - name: Setup source
