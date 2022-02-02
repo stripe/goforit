@@ -6,7 +6,7 @@ on:
     branches: [ master ]
   workflow_dispatch:
 env:
-  GOPATH: /go
+  GOPATH: $RUNNER_TEMP/go
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,7 +17,7 @@ jobs:
       with:
         go-version: 1.13
     - name: Get govendor
-      run: sudo go get -u -v github.com/kardianos/govendor
+      run: go get -u -v github.com/kardianos/govendor
     - name: Setup source
       run: ln -s $(pwd) /go/src/github.com/stripe/goforit
     - name: Test
