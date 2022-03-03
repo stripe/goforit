@@ -51,7 +51,7 @@ type goforit struct {
 	stalenessMtx       sync.RWMutex
 	stalenessThreshold time.Duration
 
-	flags sync.Map
+	flags *fastFlags
 
 	enabledTickerInterval time.Duration
 	// If a flag doesn't exist, this shared ticker will be used.
@@ -81,6 +81,7 @@ const DefaultInterval = 30 * time.Second
 func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 	stats, _ := statsd.New(DefaultStatsdAddr)
 	return &goforit{
+		flags:                 newFastFlags(),
 		stats:                 stats,
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
@@ -197,11 +198,10 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
-	f, flagExists := g.flags.Load(name)
-	var flag flagHolder
+	flags := g.flags.Load()
+	flag, flagExists := flags[name]
 	var tickerC <-chan time.Time
 	if flagExists {
-		flag = f.(flagHolder)
 		tickerC = flag.enabledTicker.C
 	} else {
 		tickerC = g.enabledTicker.C
@@ -298,34 +298,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	}
 	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
 
-	deleted := make(map[string]bool)
-	g.flags.Range(func(name, flag interface{}) bool {
-		deleted[name.(string)] = true
-		return true
-	})
-
-	for _, flag := range refreshedFlags {
-		name := flag.FlagName()
-		delete(deleted, name)
-		oldFlag, ok := g.flags.Load(name)
-		if ok {
-			// Avoid churning the map if the flag hasn't changed.
-			oldHolder := oldFlag.(flagHolder)
-			if !oldHolder.flag.Equal(flag) {
-				g.flags.Store(name, g.newHolder(flag, oldHolder.enabledTicker))
-			}
-		} else {
-			g.flags.Store(name, g.newHolder(flag, nil))
-		}
-	}
-
-	for name := range deleted {
-		f, ok := g.flags.Load(name)
-		if ok {
-			f.(flagHolder).enabledTicker.Stop()
-			g.flags.Delete(name)
-		}
-	}
+	g.flags.Update(refreshedFlags, g.enabledTickerInterval)
 
 	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
 		"Backend is stale (%s) past our threshold (%s)", false)
@@ -393,10 +366,7 @@ func (g *goforit) Close() error {
 		g.ticker.Stop()
 		g.ticker = nil
 
-		g.flags.Range(func(k, v interface{}) bool {
-			v.(flagHolder).enabledTicker.Stop()
-			return true
-		})
+		g.flags.Close()
 
 		g.enabledTicker.Stop()
 	}
