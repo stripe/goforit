@@ -115,7 +115,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	g, _ := testGoforit(0, backend, enabledTickerInterval)
 	g.RefreshFlags(backend)
 
-	flagHolder, ok := g.flags.Load()[repeatedFlag]
+	flagHolder, ok := g.flags.Get(repeatedFlag)
 	assert.True(t, ok)
 	assert.Equal(t, flagHolder.flag, Flag1{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
 

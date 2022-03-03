@@ -198,8 +198,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 // name is found
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
-	flags := g.flags.Load()
-	flag, flagExists := flags[name]
+	flag, flagExists := g.flags.Get(name)
 	var tickerC <-chan time.Time
 	if flagExists {
 		tickerC = flag.enabledTicker.C

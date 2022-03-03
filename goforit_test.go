@@ -196,7 +196,7 @@ func TestRefreshTicker(t *testing.T) {
 
 	earthTicker := time.NewTicker(time.Nanosecond)
 	g.flags.storeForTesting("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, FlagMayVary, earthTicker})
-	f, ok := g.flags.Load()["go.moon.mercury"]
+	f, ok := g.flags.Get("go.moon.mercury")
 	assert.True(t, ok)
 	moonTicker := f.enabledTicker
 	g.flags.deleteForTesting("go.stars.money")
@@ -205,17 +205,17 @@ func TestRefreshTicker(t *testing.T) {
 
 	g.RefreshFlags(backend)
 
-	_, ok = g.flags.Load()["go.sun.money"]
+	_, ok = g.flags.Get("go.sun.money")
 	assert.True(t, ok)
-	_, ok = g.flags.Load()["go.moon.mercury"]
+	_, ok = g.flags.Get("go.moon.mercury")
 	assert.True(t, ok)
-	_, ok = g.flags.Load()["go.stars.money"]
+	_, ok = g.flags.Get("go.stars.money")
 	assert.True(t, ok)
-	_, ok = g.flags.Load()["go.earth.money"]
+	_, ok = g.flags.Get("go.earth.money")
 	assert.False(t, ok)
 
 	// Make sure that the ticker was preserved.
-	f, ok = g.flags.Load()["go.moon.mercury"]
+	f, ok = g.flags.Get("go.moon.mercury")
 	assert.True(t, ok)
 	assert.Equal(t, moonTicker, f.enabledTicker)
 
@@ -255,6 +255,7 @@ func BenchmarkEnabled(b *testing.B) {
 				g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
 				defer g.Close()
 				b.ResetTimer()
+				b.ReportAllocs()
 				b.RunParallel(func(pb *testing.PB) {
 					for pb.Next() {
 						_ = g.Enabled(context.Background(), flag.flag, nil)
@@ -469,9 +470,9 @@ func TestRefreshCycleMetric(t *testing.T) {
 	defer g.Close()
 
 	tickerC := make(chan time.Time, 1)
-	flag, _ := g.flags.Load()["go.sun.money"]
+	flag, _ := g.flags.Get("go.sun.money")
 	flag.enabledTicker = &time.Ticker{C: tickerC}
-	g.flags.storeForTesting("go.sun.money", flag)
+	g.flags.storeForTesting("go.sun.money", *flag)
 
 	iters := 30
 	for i := 0; i < iters; i++ {
