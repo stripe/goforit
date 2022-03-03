@@ -16,6 +16,8 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/stripe/goforit/internal/safepool"
 )
 
 // arbitrary but fixed for reproducible testing
@@ -64,7 +66,9 @@ var _ StatsdClient = &mockStatsd{}
 // Also return the log output
 func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *bytes.Buffer) {
 	g := newWithoutInit(enabledTickerInterval)
-	g.rnd = rand.New(rand.NewSource(seed))
+	g.rndPool = safepool.NewRandPool(func() *rand.Rand {
+		return rand.New(rand.NewSource(seed))
+	})
 	var buf bytes.Buffer
 	g.printf = log.New(&buf, "", 9).Printf
 	g.stats = &mockStatsd{}
