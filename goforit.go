@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
+
+	"github.com/stripe/goforit/internal/safepool"
 )
 
 // The default statsd address to emit metrics to.
@@ -66,9 +68,8 @@ type goforit struct {
 	lastAssertMtx sync.Mutex
 	lastAssert    time.Time
 
-	// rand is not concurrency safe, in general
-	rndMtx sync.Mutex
-	rnd    *rand.Rand
+	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
+	rndPool *safepool.RandPool
 
 	printf    printFunc
 	evalCB    evaluationCallback
@@ -83,8 +84,10 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 		stats:                 stats,
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
-		rnd:                   rand.New(rand.NewSource(time.Now().UnixNano())),
-		printf:                log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
+		rndPool: safepool.NewRandPool(func() *rand.Rand {
+			return rand.New(rand.NewSource(time.Now().UnixNano()))
+		}),
+		printf: log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 	}
 }
 
@@ -136,9 +139,9 @@ func DeletedCallback(cb evaluationCallback) Option {
 }
 
 func (g *goforit) rand() float64 {
-	g.rndMtx.Lock()
-	defer g.rndMtx.Unlock()
-	return g.rnd.Float64()
+	rnd := g.rndPool.Get()
+	defer g.rndPool.Put(rnd)
+	return rnd.Float64()
 }
 
 type flagHolder struct {
