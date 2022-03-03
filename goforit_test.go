@@ -251,9 +251,11 @@ func BenchmarkEnabled(b *testing.B) {
 				g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
 				defer g.Close()
 				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					_ = g.Enabled(context.Background(), flag.flag, nil)
-				}
+				b.RunParallel(func(pb *testing.PB) {
+					for pb.Next() {
+						_ = g.Enabled(context.Background(), flag.flag, nil)
+					}
+				})
 			})
 		}
 	}
