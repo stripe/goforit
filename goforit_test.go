@@ -195,29 +195,29 @@ func TestRefreshTicker(t *testing.T) {
 	defer g.Close()
 
 	earthTicker := time.NewTicker(time.Nanosecond)
-	g.flags.Store("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, FlagMayVary, earthTicker})
-	f, ok := g.flags.Load("go.moon.mercury")
+	g.flags.storeForTesting("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, FlagMayVary, earthTicker})
+	f, ok := g.flags.Load()["go.moon.mercury"]
 	assert.True(t, ok)
-	moonTicker := f.(flagHolder).enabledTicker
-	g.flags.Delete("go.stars.money")
+	moonTicker := f.enabledTicker
+	g.flags.deleteForTesting("go.stars.money")
 	// Give tickers time to run.
 	time.Sleep(time.Millisecond)
 
 	g.RefreshFlags(backend)
 
-	_, ok = g.flags.Load("go.sun.money")
+	_, ok = g.flags.Load()["go.sun.money"]
 	assert.True(t, ok)
-	_, ok = g.flags.Load("go.moon.mercury")
+	_, ok = g.flags.Load()["go.moon.mercury"]
 	assert.True(t, ok)
-	_, ok = g.flags.Load("go.stars.money")
+	_, ok = g.flags.Load()["go.stars.money"]
 	assert.True(t, ok)
-	_, ok = g.flags.Load("go.earth.money")
+	_, ok = g.flags.Load()["go.earth.money"]
 	assert.False(t, ok)
 
 	// Make sure that the ticker was preserved.
-	f, ok = g.flags.Load("go.moon.mercury")
+	f, ok = g.flags.Load()["go.moon.mercury"]
 	assert.True(t, ok)
-	assert.Equal(t, moonTicker, f.(flagHolder).enabledTicker)
+	assert.Equal(t, moonTicker, f.enabledTicker)
 
 	// Make sure that the deleted flag's ticker was stopped.
 	_, ok = <-earthTicker.C
@@ -469,10 +469,9 @@ func TestRefreshCycleMetric(t *testing.T) {
 	defer g.Close()
 
 	tickerC := make(chan time.Time, 1)
-	f, _ := g.flags.Load("go.sun.money")
-	flag := f.(flagHolder)
+	flag, _ := g.flags.Load()["go.sun.money"]
 	flag.enabledTicker = &time.Ticker{C: tickerC}
-	g.flags.Store("go.sun.money", flag)
+	g.flags.storeForTesting("go.sun.money", flag)
 
 	iters := 30
 	for i := 0; i < iters; i++ {
