@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -62,9 +61,7 @@ func (prf *pooledRandFloater) Float64() float64 {
 
 func newPooledRandomFloater() *pooledRandFloater {
 	return &pooledRandFloater{
-		rndPool: safepool.NewRandPool(func() *rand.Rand {
-			return rand.New(rand.NewSource(time.Now().UnixNano()))
-		}),
+		rndPool: safepool.NewRandPool(),
 	}
 }
 
