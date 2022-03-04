@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,8 +15,6 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/stripe/goforit/internal/safepool"
 )
 
 // arbitrary but fixed for reproducible testing
@@ -66,9 +63,7 @@ var _ StatsdClient = &mockStatsd{}
 // Also return the log output
 func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *bytes.Buffer) {
 	g := newWithoutInit(enabledTickerInterval)
-	g.rndPool = safepool.NewRandPool(func() *rand.Rand {
-		return rand.New(rand.NewSource(seed))
-	})
+	g.rnd = newPooledRandomFloater()
 	var buf bytes.Buffer
 	g.printf = log.New(&buf, "", 9).Printf
 	g.stats = &mockStatsd{}
@@ -132,11 +127,11 @@ func TestEnabled(t *testing.T) {
 type OnRule struct{}
 type OffRule struct{}
 
-func (r *OnRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
+func (r *OnRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
 	return true, nil
 }
 
-func (r *OffRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
+func (r *OffRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
 	return false, nil
 }
 

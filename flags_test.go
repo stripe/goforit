@@ -44,13 +44,19 @@ func TestMatchListRule(t *testing.T) {
 
 }
 
+type testRandFloat64 struct{}
+
+func (testRandFloat64) Float64() float64 {
+	return rand.Float64()
+}
+
 func TestRateRule(t *testing.T) {
 	t.Parallel()
 
 	// test normal sample rule (no properties) at different rates
 	// by calling Handle() 10,000 times and comparing actual rate
 	// to expected rate
-	rnd := rand.Float64
+	rnd := testRandFloat64{}
 	testCases := []float64{1, 0, 0.01, 0.5, 0.8}
 	for _, rate := range testCases {
 		var iterations = 10000

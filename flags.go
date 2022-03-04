@@ -20,7 +20,7 @@ const (
 
 type Flag interface {
 	FlagName() string
-	Enabled(rnd randFunc, properties map[string]string) (bool, error)
+	Enabled(rnd randFloater, properties map[string]string) (bool, error)
 	Equal(other Flag) bool
 
 	// Yield if a flag is always on/off, for optimization
@@ -75,7 +75,7 @@ type RuleInfo struct {
 }
 
 type Rule interface {
-	Handle(rnd randFunc, flag string, props map[string]string) (bool, error)
+	Handle(rnd randFloater, flag string, props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
@@ -114,7 +114,7 @@ func (f Flag1) Clamp() FlagClamp {
 	return FlagMayVary
 }
 
-func (flag Flag1) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
+func (flag Flag1) Enabled(rnd randFloater, properties map[string]string) (bool, error) {
 	// if flag is inactive, always return false
 	if !flag.Active {
 		return false, nil
@@ -157,7 +157,7 @@ func getProperty(props map[string]string, prop string) (string, error) {
 	}
 }
 
-func (r *RateRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
+func (r *RateRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
@@ -181,12 +181,12 @@ func (r *RateRule) Handle(rnd randFunc, flag string, props map[string]string) (b
 		// is less than (rate * 2^32)
 		return float64(x) < (r.Rate * float64(1<<32)), nil
 	} else {
-		f := rnd()
+		f := rnd.Float64()
 		return f < r.Rate, nil
 	}
 }
 
-func (r *MatchListRule) Handle(rnd randFunc, flag string, props map[string]string) (bool, error) {
+func (r *MatchListRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
 	prop, err := getProperty(props, r.Property)
 	if err != nil {
 		return false, err
