@@ -60,7 +60,7 @@ type goforit struct {
 	// Unix time in nanos.
 	lastFlagRefreshTime int64
 
-	defaultTags sync.Map
+	defaultTags *fastTags
 
 	stats StatsdClient
 
@@ -82,6 +82,7 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 	stats, _ := statsd.New(DefaultStatsdAddr)
 	return &goforit{
 		flags:                 newFastFlags(),
+		defaultTags:           newFastTags(),
 		stats:                 stats,
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
@@ -252,13 +253,20 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	case FlagAlwaysOn:
 		enabled = true
 	default:
-		mergedProperties := make(map[string]string)
-		g.defaultTags.Range(func(k, v interface{}) bool {
-			mergedProperties[k.(string)] = v.(string)
-			return true
-		})
-		for k, v := range properties {
-			mergedProperties[k] = v
+		defaultTags := g.defaultTags.Load()
+
+		var mergedProperties map[string]string
+		if len(properties) == 0 {
+			// avoid allocating a merged array if we don't have any explicit properties/overrides
+			mergedProperties = defaultTags
+		} else {
+			mergedProperties = make(map[string]string, len(defaultTags)+len(properties))
+			for k, v := range defaultTags {
+				mergedProperties[k] = v
+			}
+			for k, v := range properties {
+				mergedProperties[k] = v
+			}
 		}
 
 		var err error
@@ -312,9 +320,7 @@ func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
 }
 
 func (g *goforit) AddDefaultTags(tags map[string]string) {
-	for k, v := range tags {
-		g.defaultTags.Store(k, v)
-	}
+	g.defaultTags.Set(tags)
 }
 
 // init initializes the flag backend, using the provided refresh function
