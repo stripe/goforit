@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -60,20 +61,41 @@ func (m *mockStatsd) getHistogramValues(name string) []float64 {
 
 var _ StatsdClient = &mockStatsd{}
 
+type logBuffer struct {
+	buf bytes.Buffer
+	mu  sync.Mutex
+}
+
+func (l *logBuffer) Write(b []byte) (n int, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.Write(b)
+}
+
+func (l *logBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.String()
+}
+
+var _ io.Writer = &logBuffer{}
+
 // Build a goforit for testing
 // Also return the log output
-func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *bytes.Buffer) {
+func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *logBuffer) {
 	g := newWithoutInit(enabledTickerInterval)
 	g.rnd = newPooledRandomFloater()
-	var buf bytes.Buffer
-	g.printf = log.New(&buf, "", 9).Printf
+	buf := new(logBuffer)
+	g.printf = log.New(buf, "", 9).Printf
 	g.stats = &mockStatsd{}
 
 	if backend != nil {
 		g.init(interval, backend, options...)
 	}
 
-	return g, &buf
+	return g, buf
 }
 
 func TestGlobal(t *testing.T) {
