@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,15 +141,15 @@ func (r *OffRule) Handle(rnd randFloater, flag string, props map[string]string) 
 // method is called
 type dummyBackend struct {
 	// tally how many times Refresh() has been called
-	refreshedCount int
+	refreshedCount int32 // read atomically
 }
 
 func (b *dummyBackend) Refresh() ([]Flag, time.Time, error) {
 	defer func() {
-		b.refreshedCount++
+		atomic.AddInt32(&b.refreshedCount, 1)
 	}()
 
-	if b.refreshedCount == 0 {
+	if atomic.LoadInt32(&b.refreshedCount) == 0 {
 		return []Flag{}, time.Time{}, nil
 	}
 
@@ -174,7 +175,7 @@ func TestRefresh(t *testing.T) {
 	// ensure refresh runs twice to avoid race conditions
 	// in which the Refresh method returns but the assertions get called
 	// before the flags are actually updated
-	for backend.refreshedCount < 2 {
+	for atomic.LoadInt32(&backend.refreshedCount) < 2 {
 		<-time.After(10 * time.Millisecond)
 	}
 
