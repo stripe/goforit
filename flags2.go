@@ -79,7 +79,7 @@ func (f Flag2) FlagName() string {
 	return f.Name
 }
 
-func (f Flag2) Enabled(rnd randFunc, properties map[string]string) (bool, error) {
+func (f Flag2) Enabled(rnd randFloater, properties map[string]string) (bool, error) {
 	for _, rule := range f.Rules {
 		match, err := rule.matches(properties)
 		if err != nil {
@@ -203,7 +203,7 @@ func (r Rule2) hashValue(seed, val string) float64 {
 	return float64(ival) / float64(1<<16)
 }
 
-func (r Rule2) evaluate(rnd randFunc, seed string, properties map[string]string) (bool, error) {
+func (r Rule2) evaluate(rnd randFloater, seed string, properties map[string]string) (bool, error) {
 	if r.Percent >= PercentOn {
 		return true, nil
 	}
@@ -212,7 +212,7 @@ func (r Rule2) evaluate(rnd randFunc, seed string, properties map[string]string)
 	}
 
 	if r.HashBy == HashByRandom {
-		return rnd() < r.Percent, nil
+		return rnd.Float64() < r.Percent, nil
 	}
 
 	val := properties[r.HashBy]

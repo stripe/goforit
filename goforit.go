@@ -45,6 +45,29 @@ type printFunc func(msg string, args ...interface{})
 type randFunc func() float64
 type evaluationCallback func(flag string, active bool)
 
+type randFloater interface {
+	Float64() float64
+}
+
+type pooledRandFloater struct {
+	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
+	rndPool *safepool.RandPool
+}
+
+func (prf *pooledRandFloater) Float64() float64 {
+	rnd := prf.rndPool.Get()
+	defer prf.rndPool.Put(rnd)
+	return rnd.Float64()
+}
+
+func newPooledRandomFloater() *pooledRandFloater {
+	return &pooledRandFloater{
+		rndPool: safepool.NewRandPool(func() *rand.Rand {
+			return rand.New(rand.NewSource(time.Now().UnixNano()))
+		}),
+	}
+}
+
 type goforit struct {
 	ticker *time.Ticker
 
@@ -69,7 +92,7 @@ type goforit struct {
 	lastAssert    time.Time
 
 	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
-	rndPool *safepool.RandPool
+	rnd randFloater
 
 	printf    printFunc
 	evalCB    evaluationCallback
@@ -86,10 +109,8 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 		stats:                 stats,
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
-		rndPool: safepool.NewRandPool(func() *rand.Rand {
-			return rand.New(rand.NewSource(time.Now().UnixNano()))
-		}),
-		printf: log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
+		rnd:                   newPooledRandomFloater(),
+		printf:                log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 	}
 }
 
@@ -138,12 +159,6 @@ func DeletedCallback(cb evaluationCallback) Option {
 	return optionFunc(func(g *goforit) {
 		g.deletedCB = cb
 	})
-}
-
-func (g *goforit) rand() float64 {
-	rnd := g.rndPool.Get()
-	defer g.rndPool.Put(rnd)
-	return rnd.Float64()
 }
 
 type flagHolder struct {
@@ -270,7 +285,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		}
 
 		var err error
-		enabled, err = flag.flag.Enabled(g.rand, mergedProperties)
+		enabled, err = flag.flag.Enabled(g.rnd, mergedProperties)
 		if err != nil {
 			g.printf(err.Error())
 		}
