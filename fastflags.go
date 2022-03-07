@@ -27,9 +27,12 @@ func (ff *fastFlags) load() flagMap {
 	return ff.flags.Load().(flagMap)
 }
 
-func (ff *fastFlags) Get(key string) (*flagHolder, bool) {
-	f, ok := ff.flags.Load().(flagMap)[key]
-	return f, ok
+func (ff *fastFlags) Get(key string) (flagHolder, bool) {
+	if f, ok := ff.flags.Load().(flagMap)[key]; ok && f != nil {
+		return *f, ok
+	} else {
+		return flagHolder{}, false
+	}
 }
 
 func (ff *fastFlags) Update(refreshedFlags []Flag, enabledTickerInterval time.Duration) {
