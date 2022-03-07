@@ -205,6 +205,21 @@ func TestRefresh(t *testing.T) {
 	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
 }
 
+func TestNonExistent(t *testing.T) {
+	t.Parallel()
+
+	backend := &dummyBackend{}
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	defer g.Close()
+
+	g.deletedCB = func(name string, enabled bool) {
+		assert.False(t, enabled)
+	}
+
+	// if non-existent flags aren't handled correctly, this could panic
+	assert.False(t, g.Enabled(context.Background(), "non.existent.tag", nil))
+}
+
 func TestRefreshTicker(t *testing.T) {
 	t.Parallel()
 
@@ -490,7 +505,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 	tickerC := make(chan time.Time, 1)
 	flag, _ := g.flags.Get("go.sun.money")
 	flag.enabledTicker = &time.Ticker{C: tickerC}
-	g.flags.storeForTesting("go.sun.money", *flag)
+	g.flags.storeForTesting("go.sun.money", flag)
 
 	iters := 30
 	for i := 0; i < iters; i++ {
