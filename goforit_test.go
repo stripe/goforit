@@ -299,6 +299,40 @@ func BenchmarkEnabled(b *testing.B) {
 	}
 }
 
+func BenchmarkEnabledWithArgs(b *testing.B) {
+	backends := []struct {
+		name    string
+		backend Backend
+	}{
+		{"json2", BackendFromJSONFile2(filepath.Join("fixtures", "flags2_example.json"))},
+	}
+	flags := []struct {
+		name string
+		flag string
+	}{
+		{"flag5", "flag5"},
+	}
+
+	for _, backend := range backends {
+		for _, flag := range flags {
+			name := fmt.Sprintf("%s/%s", backend.name, flag.name)
+			b.Run(name, func(b *testing.B) {
+				g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
+				defer g.Close()
+				b.ResetTimer()
+				b.ReportAllocs()
+				b.RunParallel(func(pb *testing.PB) {
+					for pb.Next() {
+						_ = g.Enabled(context.Background(), flag.flag, map[string]string{
+							"token": "id_123",
+						})
+					}
+				})
+			})
+		}
+	}
+}
+
 type dummyDefaultFlagsBackend struct{}
 
 func (b *dummyDefaultFlagsBackend) Refresh() ([]Flag, time.Time, error) {
