@@ -35,6 +35,7 @@ type StatsdClient interface {
 type Goforit interface {
 	Enabled(ctx context.Context, name string, props map[string]string) (enabled bool)
 	RefreshFlags(backend Backend)
+	TryRefreshFlags(backend Backend) error
 	SetStalenessThreshold(threshold time.Duration)
 	AddDefaultTags(tags map[string]string)
 	Close() error
