@@ -3,6 +3,7 @@ package goforit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -218,6 +219,23 @@ func TestNonExistent(t *testing.T) {
 
 	// if non-existent flags aren't handled correctly, this could panic
 	assert.False(t, g.Enabled(context.Background(), "non.existent.tag", nil))
+}
+
+// errorBackend always returns an error for refreshes.
+type errorBackend struct {}
+func (e *errorBackend) Refresh() ([]Flag, time.Time, error) {
+	return []Flag{}, time.Time{}, errors.New("read failed")
+}
+
+func TestTryRefresh(t *testing.T) {
+	t.Parallel()
+
+	backend := &errorBackend{}
+	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	defer g.Close()
+
+	err := g.TryRefreshFlags(backend)
+	assert.Error(t, err)
 }
 
 func TestRefreshTicker(t *testing.T) {

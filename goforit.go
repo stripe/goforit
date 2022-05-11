@@ -301,8 +301,19 @@ func (g *goforit) newHolder(flag Flag, ticker *time.Ticker) flagHolder {
 // fetch all feature flags and update the internal cache.
 // The thunk provided can use a variety of mechanisms for
 // querying the flag values, such as a local file or
-// Consul key/value storage.
+// Consul key/value storage. Backend refresh errors are
+// ignored.
 func (g *goforit) RefreshFlags(backend Backend) {
+	_ = g.TryRefreshFlags(backend)
+}
+
+// TryRefreshFlags will use the provided thunk function to
+// fetch all feature flags and update the internal cache.
+// The thunk provided can use a variety of mechanisms for
+// querying the flag values, such as a local file or
+// Consul key/value storage. An error will be returned if
+// the backend refresh fails.
+func (g *goforit) TryRefreshFlags(backend Backend) error {
 	// Ask the backend for the flags
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
@@ -313,7 +324,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 		checkStatus = statsd.Warn
 		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 		g.printf("Error refreshing flags: %s", err)
-		return
+		return err
 	}
 	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
 
@@ -322,7 +333,7 @@ func (g *goforit) RefreshFlags(backend Backend) {
 	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
 		"Backend is stale (%s) past our threshold (%s)", false)
 
-	return
+	return nil
 }
 
 func (g *goforit) SetStalenessThreshold(threshold time.Duration) {

@@ -19,6 +19,10 @@ func RefreshFlags(backend Backend) {
 	globalGoforit.RefreshFlags(backend)
 }
 
+func TryRefreshFlags(backend Backend) error {
+	return globalGoforit.TryRefreshFlags(backend)
+}
+
 func SetStalenessThreshold(threshold time.Duration) {
 	globalGoforit.SetStalenessThreshold(threshold)
 }
