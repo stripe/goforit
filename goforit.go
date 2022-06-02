@@ -97,14 +97,33 @@ type goforit struct {
 	deletedCB evaluationCallback
 }
 
+type nullStatsd struct{}
+
+func (m *nullStatsd) Gauge(string, float64, []string, float64) error {
+	return nil
+}
+
+func (m *nullStatsd) Count(string, int64, []string, float64) error {
+	return nil
+}
+
+func (m *nullStatsd) SimpleServiceCheck(string, statsd.ServiceCheckStatus) error {
+	return nil
+}
+
+func (m *nullStatsd) Histogram(string, float64, []string, float64) error {
+	return nil
+}
+
+var _ StatsdClient = &nullStatsd{}
+
 const DefaultInterval = 30 * time.Second
 
 func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
-	stats, _ := statsd.New(DefaultStatsdAddr)
 	return &goforit{
 		flags:                 newFastFlags(),
 		defaultTags:           newFastTags(),
-		stats:                 stats,
+		stats:                 new(nullStatsd),
 		enabledTickerInterval: enabledTickerInterval,
 		enabledTicker:         time.NewTicker(enabledTickerInterval),
 		rnd:                   newPooledRandomFloater(),
@@ -116,6 +135,11 @@ func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
 func New(interval time.Duration, backend Backend, opts ...Option) Goforit {
 	g := newWithoutInit(enabledTickerInterval)
 	g.init(interval, backend, opts...)
+	// some users may depend on legacy behavior of creating a
+	// non-dependency-injected statsd client.
+	if _, ok := g.stats.(*nullStatsd); ok {
+		g.stats, _ = statsd.New(DefaultStatsdAddr)
+	}
 	return g
 }
 
