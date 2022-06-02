@@ -25,7 +25,7 @@ func main() {
 	ctx := context.Background()
 
 	// flags.csv contains comma-separated flag names and sample rates.
-	// See: fixtures/flags_example.csv
+	// See: testdata/flags_example.csv
 	backend := goforit.BackendFromFile("flags.csv")
 	goforit.Init(30*time.Second, backend)
 
@@ -59,10 +59,10 @@ In this format, each flag can have a number of rules, and each rule can contain 
 
 goforit is in an experimental state and may introduce breaking changes without notice.
 
-[CSV]: https://github.com/stripe/goforit/blob/master/fixtures/flags_example.csv
+[CSV]: https://github.com/stripe/goforit/blob/master/testdata/flags_example.csv
 [JSON1_proposal]: https://github.com/stripe/goforit/blob/master/doc/rule_flags.md
-[JSON1]: https://github.com/stripe/goforit/blob/master/fixtures/flags_example.json
-[JSON2]: https://github.com/stripe/goforit/blob/master/fixtures/flags2_acceptance.json
+[JSON1]: https://github.com/stripe/goforit/blob/master/testdata/flags_example.json
+[JSON2]: https://github.com/stripe/goforit/blob/master/testdata/flags2_acceptance.json
 
 # License
 

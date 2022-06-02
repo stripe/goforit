@@ -56,7 +56,7 @@ func TestFlags2Backend(t *testing.T) {
 		},
 	}
 
-	backend := BackendFromJSONFile2(filepath.Join("fixtures", "flags2_example.json"))
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
 	flags, updated, err := backend.Refresh()
 
 	assert.NoError(t, err)
@@ -65,7 +65,7 @@ func TestFlags2Backend(t *testing.T) {
 }
 
 func flags2AcceptanceTests(t *testing.T, f func(t *testing.T, flagname string, flag Flag2, properties map[string]string, expected bool, msg string)) {
-	path := filepath.Join("fixtures", "flags2_acceptance.json")
+	path := filepath.Join("testdata", "flags2_acceptance.json")
 	buf, err := ioutil.ReadFile(path)
 	require.NoError(t, err)
 
@@ -126,7 +126,7 @@ func TestFlags2AcceptanceClamp(t *testing.T) {
 func TestFlags2AcceptanceEndToEnd(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join("fixtures", "flags2_acceptance.json")
+	path := filepath.Join("testdata", "flags2_acceptance.json")
 	backend := BackendFromJSONFile2(path)
 	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()

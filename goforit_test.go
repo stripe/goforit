@@ -104,7 +104,7 @@ func TestEnabled(t *testing.T) {
 
 	const iterations = 100000
 
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
 	g, _ := testGoforit(DefaultInterval, backend, enabledTickerInterval)
 	defer g.Close()
 
@@ -154,7 +154,7 @@ func (b *dummyBackend) Refresh() ([]Flag, time.Time, error) {
 		return []Flag{}, time.Time{}, nil
 	}
 
-	f, err := os.Open(filepath.Join("fixtures", "flags_example.csv"))
+	f, err := os.Open(filepath.Join("testdata", "flags_example.csv"))
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -220,7 +220,7 @@ func TestTryRefresh(t *testing.T) {
 func TestRefreshTicker(t *testing.T) {
 	t.Parallel()
 
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
 	g, _ := testGoforit(10*time.Second, backend, enabledTickerInterval)
 	defer g.Close()
 
@@ -267,8 +267,8 @@ func BenchmarkEnabled(b *testing.B) {
 		name    string
 		backend Backend
 	}{
-		{"csv", BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))},
-		{"json2", BackendFromJSONFile2(filepath.Join("fixtures", "flags2_example.json"))},
+		{"csv", BackendFromFile(filepath.Join("testdata", "flags_example.csv"))},
+		{"json2", BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))},
 	}
 	flags := []struct {
 		name string
@@ -301,7 +301,7 @@ func BenchmarkEnabledWithArgs(b *testing.B) {
 		name    string
 		backend Backend
 	}{
-		{"json2", BackendFromJSONFile2(filepath.Join("fixtures", "flags2_example.json"))},
+		{"json2", BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))},
 	}
 	flags := []struct {
 		name string
@@ -385,7 +385,7 @@ func TestDefaultTags(t *testing.T) {
 func TestOverride(t *testing.T) {
 	t.Parallel()
 
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
 	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
 	defer g.Close()
 	g.RefreshFlags(backend)
@@ -640,7 +640,7 @@ func TestEvaluationCallback(t *testing.T) {
 	t.Parallel()
 
 	evaluated := map[flagStatus]int{}
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
+	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
 	g := New(enabledTickerInterval, backend, EvaluationCallback(func(flag string, active bool) {
 		evaluated[flagStatus{flag, active}] += 1
 	}))
@@ -659,7 +659,7 @@ func TestDeletionCallback(t *testing.T) {
 	t.Parallel()
 
 	deleted := map[flagStatus]int{}
-	backend := BackendFromJSONFile2(filepath.Join("fixtures", "flags2_acceptance.json"))
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_acceptance.json"))
 	g := New(enabledTickerInterval, backend, DeletedCallback(func(flag string, active bool) {
 		deleted[flagStatus{flag, active}] += 1
 	}))

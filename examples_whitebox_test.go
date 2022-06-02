@@ -12,7 +12,7 @@ func Example() {
 	ctx := context.Background()
 
 	// flags.csv contains comma-separated flag names and sample rates.
-	// See: fixtures/flags_example.csv
+	// See: testdata/flags_example.csv
 	backend := goforit.BackendFromFile("flags.csv")
 	flags := goforit.New(30*time.Second, backend)
 
