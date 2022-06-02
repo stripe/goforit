@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/stripe/goforit/clamp"
 	"github.com/stripe/goforit/flags"
@@ -29,31 +30,31 @@ const (
 // Each Flag2 contains a list of rules, and each rule contains a list of predicates.
 // When querying a flag, the first rule whose predicates match is applied.
 type Predicate2 struct {
-	Attribute string
-	Operation Operation2
-	Values    map[string]bool
+	Attribute string          `json:"attribute"`
+	Operation Operation2      `json:"operation"`
+	Values    map[string]bool `json:"values"`
 }
 type Rule2 struct {
-	HashBy     string `json:"hash_by"`
-	Percent    float64
-	Predicates []Predicate2
+	HashBy     string       `json:"hash_by"`
+	Percent    float64      `json:"percent"`
+	Predicates []Predicate2 `json:"predicates"`
 }
 type Flag2 struct {
-	Name    string
-	Seed    string
-	Rules   []Rule2
-	Deleted bool
+	Name    string  `json:"name"`
+	Seed    string  `json:"seed"`
+	Rules   []Rule2 `json:"rules"`
+	Deleted bool    `json:"deleted"`
 }
 
 type JSONFormat2 struct {
-	Flags   []Flag2
-	Updated float64
+	Flags   []Flag2 `json:"flags"`
+	Updated float64 `json:"updated"`
 }
 
 type predicate2Json struct {
-	Attribute string
-	Operation Operation2
-	Values    []string
+	Attribute string     `json:"attribute"`
+	Operation Operation2 `json:"operation"`
+	Values    []string   `json:"values"`
 }
 
 func (p *Predicate2) UnmarshalJSON(data []byte) error {
@@ -68,6 +69,23 @@ func (p *Predicate2) UnmarshalJSON(data []byte) error {
 		p.Values[v] = true
 	}
 	return nil
+}
+
+func (p *Predicate2) MarshalJSON() ([]byte, error) {
+	raw := predicate2Json{
+		Attribute: p.Attribute,
+		Operation: p.Operation,
+	}
+
+	if len(p.Values) > 0 {
+		raw.Values = make([]string, 0, len(p.Values))
+		for k := range p.Values {
+			raw.Values = append(raw.Values, k)
+		}
+		sort.Strings(raw.Values)
+	}
+
+	return json.Marshal(&raw)
 }
 
 func (f Flag2) FlagName() string {

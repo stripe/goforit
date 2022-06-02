@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -137,4 +138,39 @@ func TestFlags2AcceptanceEndToEnd(t *testing.T) {
 		enabled := g.Enabled(context.Background(), flagname, properties)
 		assert.Equal(t, expected, enabled, msg)
 	})
+}
+
+func TestFlags2Reserialize(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("testdata", "flags2_acceptance.json")
+	backend := BackendFromJSONFile2(path)
+
+	flags, _, err := backend.Refresh()
+	require.NoError(t, err)
+
+	flagsOut := make([]flags2.Flag2, len(flags))
+	for i := 0; i < len(flags); i++ {
+		flagsOut[i] = flags[i].(flags2.Flag2)
+	}
+
+	root := flags2.JSONFormat2{
+		Flags: flagsOut,
+	}
+
+	marshaled, err := json.MarshalIndent(&root, "", "  ")
+	require.NoError(t, err)
+
+	file, err := os.CreateTemp("", "goforit-flags2-reserializetest")
+	require.NoError(t, err)
+	defer os.Remove(file.Name())
+
+	_, err = file.Write(marshaled)
+	require.NoError(t, err)
+
+	backend2 := BackendFromJSONFile2(file.Name())
+	flags2, _, err := backend2.Refresh()
+	require.NoError(t, err)
+
+	require.Equal(t, flags, flags2)
 }
