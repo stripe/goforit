@@ -1,12 +1,13 @@
-package goforit
+package flags2
 
 import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
-	"time"
+
+	"github.com/stripe/goforit/clamp"
+	"github.com/stripe/goforit/flags"
 )
 
 type Operation2 string
@@ -44,12 +45,6 @@ type Flag2 struct {
 	Deleted bool
 }
 
-// DeletableFlag can report whether this flag is scheduled for deletion
-type deletableFlag interface {
-	// IsDeleted yields true if this flag is scheduled for deletion
-	isDeleted() bool
-}
-
 type JSONFormat2 struct {
 	Flags   []Flag2
 	Updated float64
@@ -79,7 +74,7 @@ func (f Flag2) FlagName() string {
 	return f.Name
 }
 
-func (f Flag2) Enabled(rnd randFloater, properties map[string]string) (bool, error) {
+func (f Flag2) Enabled(rnd flags.Rand, properties map[string]string) (bool, error) {
 	for _, rule := range f.Rules {
 		match, err := rule.matches(properties)
 		if err != nil {
@@ -96,18 +91,18 @@ func (f Flag2) Enabled(rnd randFloater, properties map[string]string) (bool, err
 	return false, nil
 }
 
-func (f Flag2) Clamp() FlagClamp {
+func (f Flag2) Clamp() clamp.Clamp {
 	if len(f.Rules) == 0 {
-		return FlagAlwaysOff
+		return clamp.AlwaysOff
 	}
 	if len(f.Rules) == 1 && len(f.Rules[0].Predicates) == 0 {
 		if f.Rules[0].Percent <= PercentOff {
-			return FlagAlwaysOff
+			return clamp.AlwaysOff
 		} else if f.Rules[0].Percent >= PercentOn {
-			return FlagAlwaysOn
+			return clamp.AlwaysOn
 		}
 	}
-	return FlagMayVary
+	return clamp.MayVary
 }
 
 func (p Predicate2) equal(o Predicate2) bool {
@@ -136,7 +131,7 @@ func (r Rule2) equal(o Rule2) bool {
 	return true
 }
 
-func (f Flag2) Equal(other Flag) bool {
+func (f Flag2) Equal(other flags.Flag) bool {
 	o, ok := other.(Flag2)
 	if !ok {
 		return false
@@ -153,7 +148,7 @@ func (f Flag2) Equal(other Flag) bool {
 	return true
 }
 
-func (f Flag2) isDeleted() bool {
+func (f Flag2) IsDeleted() bool {
 	return f.Deleted
 }
 
@@ -203,7 +198,7 @@ func (r Rule2) hashValue(seed, val string) float64 {
 	return float64(ival) / float64(1<<16)
 }
 
-func (r Rule2) evaluate(rnd randFloater, seed string, properties map[string]string) (bool, error) {
+func (r Rule2) evaluate(rnd flags.Rand, seed string, properties map[string]string) (bool, error) {
 	if r.Percent >= PercentOn {
 		return true, nil
 	}
@@ -217,29 +212,4 @@ func (r Rule2) evaluate(rnd randFloater, seed string, properties map[string]stri
 
 	val := properties[r.HashBy]
 	return r.hashValue(seed, val) < r.Percent, nil
-}
-
-func (b jsonFileBackend2) Refresh() ([]Flag, time.Time, error) {
-	return readFile(b.filename, "json2", parseFlagsJSON2)
-}
-
-func parseFlagsJSON2(r io.Reader) ([]Flag, time.Time, error) {
-	dec := json.NewDecoder(r)
-	var v JSONFormat2
-	err := dec.Decode(&v)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-
-	flags := make([]Flag, len(v.Flags))
-	for i, f := range v.Flags {
-		flags[i] = f
-	}
-
-	return flags, time.Unix(int64(v.Updated), 0), nil
-}
-
-// BackendFromJSONFile2 creates a v2 backend powered by a JSON file
-func BackendFromJSONFile2(filename string) Backend {
-	return jsonFileBackend2{filename}
 }

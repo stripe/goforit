@@ -11,10 +11,12 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 
+	"github.com/stripe/goforit/clamp"
+	"github.com/stripe/goforit/flags"
 	"github.com/stripe/goforit/internal/safepool"
 )
 
-// The default statsd address to emit metrics to.
+// DefaultStatsdAddr is the address we will emit metrics to if not overridden.
 const DefaultStatsdAddr = "127.0.0.1:8200"
 
 const lastAssertInterval = 5 * time.Minute
@@ -41,9 +43,10 @@ type Goforit interface {
 	Close() error
 }
 
-type printFunc func(msg string, args ...interface{})
-type randFunc func() float64
-type evaluationCallback func(flag string, active bool)
+type (
+	printFunc          func(msg string, args ...interface{})
+	evaluationCallback func(flag string, active bool)
+)
 
 type randFloater interface {
 	Float64() float64
@@ -184,8 +187,8 @@ func DeletedCallback(cb evaluationCallback) Option {
 }
 
 type flagHolder struct {
-	flag          Flag
-	clamp         FlagClamp
+	flag          flags.Flag
+	clamp         clamp.Clamp
 	enabledTicker *time.Ticker
 }
 
@@ -214,7 +217,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 
 	// Report the staleness
 	staleness := time.Since(t)
-	g.stats.Histogram(metric, staleness.Seconds(), nil, metricRate)
+	_ = g.stats.Histogram(metric, staleness.Seconds(), nil, metricRate)
 
 	// Log if we're old
 	thresh := g.getStalenessThreshold()
@@ -251,7 +254,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 			if enabled {
 				gauge = 1
 			}
-			g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, 1)
+			_ = g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, 1)
 			last := atomic.LoadInt64(&g.lastFlagRefreshTime)
 			// time.Duration is conveniently measured in nanoseconds.
 			lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
@@ -260,12 +263,13 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		}()
 	default:
 	}
+
 	if g.evalCB != nil {
 		// Wrap in a func, so `enabled` is evaluated at return-time instead of when defer is called
 		defer func() { g.evalCB(name, enabled) }()
 	}
 	if g.deletedCB != nil {
-		if df, ok := flag.flag.(deletableFlag); ok && df.isDeleted() {
+		if df, ok := flag.flag.(flags.DeletableFlag); ok && df.IsDeleted() {
 			defer func() { g.deletedCB(name, enabled) }()
 		}
 	}
@@ -285,9 +289,9 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	}
 
 	switch flag.clamp {
-	case FlagAlwaysOff:
+	case clamp.AlwaysOff:
 		enabled = false
-	case FlagAlwaysOn:
+	case clamp.AlwaysOn:
 		enabled = true
 	default:
 		defaultTags := g.defaultTags.Load()
@@ -315,7 +319,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	return
 }
 
-func (g *goforit) newHolder(flag Flag, ticker *time.Ticker) flagHolder {
+func (g *goforit) newHolder(flag flags.Flag, ticker *time.Ticker) flagHolder {
 	if ticker == nil {
 		ticker = time.NewTicker(g.enabledTickerInterval)
 	}
@@ -342,12 +346,12 @@ func (g *goforit) TryRefreshFlags(backend Backend) error {
 	// Ask the backend for the flags
 	var checkStatus statsd.ServiceCheckStatus
 	defer func() {
-		g.stats.SimpleServiceCheck("goforit.refreshFlags.present", checkStatus)
+		_ = g.stats.SimpleServiceCheck("goforit.refreshFlags.present", checkStatus)
 	}()
 	refreshedFlags, updated, err := backend.Refresh()
 	if err != nil {
 		checkStatus = statsd.Warn
-		g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
+		_ = g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 		g.printf("Error refreshing flags: %s", err)
 		return err
 	}

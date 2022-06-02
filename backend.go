@@ -3,17 +3,20 @@ package goforit
 import (
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/stripe/goforit/flags"
+	"github.com/stripe/goforit/flags1"
+	"github.com/stripe/goforit/flags2"
 )
 
 type Backend interface {
 	// Refresh returns a new set of flags.
 	// It also returns the age of these flags, or an empty time if no age is known.
-	Refresh() ([]Flag, time.Time, error)
+	Refresh() ([]flags.Flag, time.Time, error)
 }
 
 type csvFileBackend struct {
@@ -28,83 +31,12 @@ type jsonFileBackend2 struct {
 	filename string
 }
 
-type flagJson struct {
-	Name   string
-	Active bool
-	Rate   float64
-	Rules  []RuleInfo
+type jsonFormat1 struct {
+	Flags       []flags1.Flag1 `json:"flags"`
+	UpdatedTime float64        `json:"updated"`
 }
 
-type ruleInfoJson struct {
-	Type    string     `json:"type"`
-	OnMatch RuleAction `json:"on_match"`
-	OnMiss  RuleAction `json:"on_miss"`
-}
-
-type JSONFormat1 struct {
-	Flags       []Flag1 `json:"flags"`
-	UpdatedTime float64 `json:"updated"`
-}
-
-// While the goforit client allows for complex feature flag functionality, it is possible to have
-//simple flags that specify only Name and Rate (at least for the time being).Instead of using
-// versions to formalize this, we will write some simple logic in a custom Unmarshaler to handle
-// both cases
-func (ri *Flag1) UnmarshalJSON(buf []byte) error {
-	var raw flagJson
-	err := json.Unmarshal(buf, &raw)
-	if err != nil {
-		return err
-	}
-	if len(raw.Rules) == 0 {
-		// if no rules are specified, we create a RateRule if a non-zero rate was specified, and ensure
-		// the flag is active. if no rate was specified, active should be default to false
-		if raw.Rate > 0 {
-			raw.Active = true
-			raw.Rules = []RuleInfo{
-				{&RateRule{Rate: raw.Rate}, RuleOn, RuleOff},
-			}
-		}
-	}
-
-	ri.Name = raw.Name
-	ri.Active = raw.Active
-	ri.Rules = raw.Rules
-
-	return nil
-}
-
-func (ri *RuleInfo) UnmarshalJSON(buf []byte) error {
-	var raw ruleInfoJson
-	err := json.Unmarshal(buf, &raw)
-	if err != nil {
-		return err
-	}
-
-	// Validate actions
-	if !validRuleActions[raw.OnMatch] {
-		return errors.New("Bad action") // TODO: make a custom error type
-	}
-	if !validRuleActions[raw.OnMiss] {
-		return errors.New("Bad action") // TODO: make a custom error type
-	}
-	ri.OnMatch = raw.OnMatch
-	ri.OnMiss = raw.OnMiss
-
-	// Handle the type
-	switch raw.Type {
-	case "match_list": // TODO: constant
-		ri.Rule = &MatchListRule{}
-	case "sample": // TODO: constant
-		ri.Rule = &RateRule{}
-	default:
-		return errors.New("Bad type") // TODO: custom error type
-	}
-
-	return json.Unmarshal(buf, ri.Rule)
-}
-
-func readFile(file string, backend string, parse func(io.Reader) ([]Flag, time.Time, error)) ([]Flag, time.Time, error) {
+func readFile(file string, backend string, parse func(io.Reader) ([]flags.Flag, time.Time, error)) ([]flags.Flag, time.Time, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -113,7 +45,7 @@ func readFile(file string, backend string, parse func(io.Reader) ([]Flag, time.T
 	return parse(f)
 }
 
-func (b jsonFileBackend) Refresh() ([]Flag, time.Time, error) {
+func (b jsonFileBackend) Refresh() ([]flags.Flag, time.Time, error) {
 	flags, updated, err := readFile(b.filename, "json", parseFlagsJSON)
 	if updated != time.Unix(0, 0) {
 		return flags, updated, err
@@ -126,11 +58,11 @@ func (b jsonFileBackend) Refresh() ([]Flag, time.Time, error) {
 	return flags, fileInfo.ModTime(), nil
 }
 
-func (b csvFileBackend) Refresh() ([]Flag, time.Time, error) {
+func (b csvFileBackend) Refresh() ([]flags.Flag, time.Time, error) {
 	return readFile(b.filename, "csv", parseFlagsCSV)
 }
 
-func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
+func parseFlagsCSV(r io.Reader) ([]flags.Flag, time.Time, error) {
 	// every row is guaranteed to have 2 fields
 	const FieldsPerRecord = 2
 
@@ -143,7 +75,7 @@ func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 		return nil, time.Time{}, err
 	}
 
-	flags := make([]Flag, 0, len(rows))
+	fflags := make([]flags.Flag, 0, len(rows))
 	for _, row := range rows {
 		name := row[0]
 
@@ -153,34 +85,34 @@ func parseFlagsCSV(r io.Reader) ([]Flag, time.Time, error) {
 			rate = 0
 		}
 
-		f := Flag1{
+		f := flags1.Flag1{
 			Name:   name,
 			Active: true,
 		}
 		if rate != 1 {
-			f.Rules = []RuleInfo{
-				{&RateRule{Rate: rate}, RuleOn, RuleOff},
+			f.Rules = []flags1.RuleInfo{
+				{&flags1.RateRule{Rate: rate}, flags.RuleOn, flags.RuleOff},
 			}
 		}
-		flags = append(flags, f)
+		fflags = append(fflags, f)
 	}
-	return flags, time.Time{}, nil
+	return fflags, time.Time{}, nil
 }
 
-func parseFlagsJSON(r io.Reader) ([]Flag, time.Time, error) {
+func parseFlagsJSON(r io.Reader) ([]flags.Flag, time.Time, error) {
 	dec := json.NewDecoder(r)
-	var v JSONFormat1
+	var v jsonFormat1
 	err := dec.Decode(&v)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
 
-	flags := make([]Flag, len(v.Flags))
+	fflags := make([]flags.Flag, len(v.Flags))
 	for i, f := range v.Flags {
-		flags[i] = f
+		fflags[i] = f
 	}
 
-	return flags, time.Unix(int64(v.UpdatedTime), 0), nil
+	return fflags, time.Unix(int64(v.UpdatedTime), 0), nil
 }
 
 // BackendFromFile is a helper function that creates a valid
@@ -195,4 +127,29 @@ func BackendFromFile(filename string) Backend {
 // instead of CSV
 func BackendFromJSONFile(filename string) Backend {
 	return jsonFileBackend{filename}
+}
+
+func (b jsonFileBackend2) Refresh() ([]flags.Flag, time.Time, error) {
+	return readFile(b.filename, "json2", parseFlagsJSON2)
+}
+
+func parseFlagsJSON2(r io.Reader) ([]flags.Flag, time.Time, error) {
+	dec := json.NewDecoder(r)
+	var v flags2.JSONFormat2
+	err := dec.Decode(&v)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	flags := make([]flags.Flag, len(v.Flags))
+	for i, f := range v.Flags {
+		flags[i] = f
+	}
+
+	return flags, time.Unix(int64(v.Updated), 0), nil
+}
+
+// BackendFromJSONFile2 creates a v2 backend powered by a JSON file
+func BackendFromJSONFile2(filename string) Backend {
+	return jsonFileBackend2{filename}
 }
