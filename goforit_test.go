@@ -99,28 +99,6 @@ func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval 
 	return g, buf
 }
 
-func TestGlobal(t *testing.T) {
-	// Not parallel, testing global behavior
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	globalGoforit.stats = &mockStatsd{} // prevent logging real metrics
-
-	Init(DefaultInterval, backend)
-	defer Close()
-
-	assert.False(t, Enabled(nil, "go.sun.money", nil))
-	assert.True(t, Enabled(nil, "go.moon.mercury", nil))
-}
-
-func TestGlobalInitOptions(t *testing.T) {
-	// Not parallel, testing global behavior
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_example.csv"))
-	stats := &mockStatsd{}
-	Init(DefaultInterval, backend, Statsd(stats))
-	defer Close()
-
-	assert.Equal(t, stats, globalGoforit.stats)
-}
-
 func TestEnabled(t *testing.T) {
 	t.Parallel()
 
@@ -222,7 +200,8 @@ func TestNonExistent(t *testing.T) {
 }
 
 // errorBackend always returns an error for refreshes.
-type errorBackend struct {}
+type errorBackend struct{}
+
 func (e *errorBackend) Refresh() ([]Flag, time.Time, error) {
 	return []Flag{}, time.Time{}, errors.New("read failed")
 }
