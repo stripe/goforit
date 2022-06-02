@@ -11,7 +11,7 @@ import (
 func TestParseFlagsCSV(t *testing.T) {
 	t.Parallel()
 
-	filename := filepath.Join("fixtures", "flags_example.csv")
+	filename := filepath.Join("testdata", "flags_example.csv")
 
 	type testcase struct {
 		Name     string
@@ -22,7 +22,7 @@ func TestParseFlagsCSV(t *testing.T) {
 	cases := []testcase{
 		{
 			Name:     "BasicExample",
-			Filename: filepath.Join("fixtures", "flags_example.csv"),
+			Filename: filepath.Join("testdata", "flags_example.csv"),
 			Expected: []Flag{
 				Flag1{
 					"go.sun.money",
@@ -59,7 +59,7 @@ func TestParseFlagsCSV(t *testing.T) {
 func TestParseFlagsJSON(t *testing.T) {
 	t.Parallel()
 
-	filename := filepath.Join("fixtures", "flags_example.json")
+	filename := filepath.Join("testdata", "flags_example.json")
 
 	type testcase struct {
 		Name     string
@@ -70,7 +70,7 @@ func TestParseFlagsJSON(t *testing.T) {
 	cases := []testcase{
 		{
 			Name:     "BasicExample",
-			Filename: filepath.Join("fixtures", "flags_example.json"),
+			Filename: filepath.Join("testdata", "flags_example.json"),
 			Expected: []Flag{
 				Flag1{
 					"go.sun.moon",
@@ -111,7 +111,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	const repeatedFlag = "go.sun.money"
 	const lastValue = 0.7
 
-	backend := BackendFromFile(filepath.Join("fixtures", "flags_multiple_definitions.csv"))
+	backend := BackendFromFile(filepath.Join("testdata", "flags_multiple_definitions.csv"))
 	g, _ := testGoforit(0, backend, enabledTickerInterval)
 	g.RefreshFlags(backend)
 
