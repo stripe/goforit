@@ -18,10 +18,11 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
-)
 
-// arbitrary but fixed for reproducible testing
-const seed = 5194304667978865136
+	"github.com/stripe/goforit/clamp"
+	"github.com/stripe/goforit/flags"
+	"github.com/stripe/goforit/flags1"
+)
 
 const ε = .02
 
@@ -126,8 +127,10 @@ func TestEnabled(t *testing.T) {
 	assert.InEpsilon(t, 0.5, actualRate, ε)
 }
 
-type OnRule struct{}
-type OffRule struct{}
+type (
+	OnRule  struct{}
+	OffRule struct{}
+)
 
 func (r *OnRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
 	return true, nil
@@ -145,13 +148,13 @@ type dummyBackend struct {
 	refreshedCount int32 // read atomically
 }
 
-func (b *dummyBackend) Refresh() ([]Flag, time.Time, error) {
+func (b *dummyBackend) Refresh() ([]flags.Flag, time.Time, error) {
 	defer func() {
 		atomic.AddInt32(&b.refreshedCount, 1)
 	}()
 
 	if atomic.LoadInt32(&b.refreshedCount) == 0 {
-		return []Flag{}, time.Time{}, nil
+		return []flags.Flag{}, time.Time{}, nil
 	}
 
 	f, err := os.Open(filepath.Join("testdata", "flags_example.csv"))
@@ -202,8 +205,8 @@ func TestNonExistent(t *testing.T) {
 // errorBackend always returns an error for refreshes.
 type errorBackend struct{}
 
-func (e *errorBackend) Refresh() ([]Flag, time.Time, error) {
-	return []Flag{}, time.Time{}, errors.New("read failed")
+func (e *errorBackend) Refresh() ([]flags.Flag, time.Time, error) {
+	return []flags.Flag{}, time.Time{}, errors.New("read failed")
 }
 
 func TestTryRefresh(t *testing.T) {
@@ -225,7 +228,7 @@ func TestRefreshTicker(t *testing.T) {
 	defer g.Close()
 
 	earthTicker := time.NewTicker(time.Nanosecond)
-	g.flags.storeForTesting("go.earth.money", flagHolder{Flag1{"go.earth.money", true, nil}, FlagMayVary, earthTicker})
+	g.flags.storeForTesting("go.earth.money", flagHolder{flags1.Flag1{"go.earth.money", true, nil}, clamp.MayVary, earthTicker})
 	f, ok := g.flags.Get("go.moon.mercury")
 	assert.True(t, ok)
 	moonTicker := f.enabledTicker
@@ -332,17 +335,17 @@ func BenchmarkEnabledWithArgs(b *testing.B) {
 
 type dummyDefaultFlagsBackend struct{}
 
-func (b *dummyDefaultFlagsBackend) Refresh() ([]Flag, time.Time, error) {
-	var testFlag = Flag1{
+func (b *dummyDefaultFlagsBackend) Refresh() ([]flags.Flag, time.Time, error) {
+	testFlag := flags1.Flag1{
 		"test",
 		true,
-		[]RuleInfo{
-			{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOff, RuleContinue},
-			{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOn, RuleContinue},
-			{&RateRule{1, []string{"cluster", "db"}}, RuleOn, RuleOff},
+		[]flags1.RuleInfo{
+			{&flags1.MatchListRule{"host_name", []string{"apibox_789"}}, flags.RuleOff, flags.RuleContinue},
+			{&flags1.MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, flags.RuleOn, flags.RuleContinue},
+			{&flags1.RateRule{1, []string{"cluster", "db"}}, flags.RuleOn, flags.RuleOff},
 		},
 	}
-	return []Flag{testFlag}, time.Time{}, nil
+	return []flags.Flag{testFlag}, time.Time{}, nil
 }
 
 func TestDefaultTags(t *testing.T) {
@@ -471,15 +474,15 @@ type dummyAgeBackend struct {
 	mtx sync.RWMutex
 }
 
-func (b *dummyAgeBackend) Refresh() ([]Flag, time.Time, error) {
-	var testFlag = Flag1{
+func (b *dummyAgeBackend) Refresh() ([]flags.Flag, time.Time, error) {
+	testFlag := flags1.Flag1{
 		"go.sun.money",
 		true,
-		[]RuleInfo{},
+		[]flags1.RuleInfo{},
 	}
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
-	return []Flag{testFlag}, b.t, nil
+	return []flags.Flag{testFlag}, b.t, nil
 }
 
 // Test to see proper monitoring of age of the flags dump

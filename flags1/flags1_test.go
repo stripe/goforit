@@ -1,19 +1,17 @@
-package goforit
+package flags1
 
 import (
 	"fmt"
-	"math/rand"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/stripe/goforit/flags"
 )
 
 func TestMatchListRule(t *testing.T) {
-
-	var r = MatchListRule{"host_name", []string{"apibox_123", "apibox_456", "apibox_789"}}
+	r := MatchListRule{"host_name", []string{"apibox_123", "apibox_456", "apibox_789"}}
 
 	// return false and error if empty properties map passed
 	res, err := r.Handle(nil, "test", map[string]string{})
@@ -41,13 +39,6 @@ func TestMatchListRule(t *testing.T) {
 	res, err = r.Handle(nil, "test", map[string]string{"host_name": "apibox_456", "db": "mongo-prod"})
 	assert.False(t, res)
 	assert.Nil(t, err)
-
-}
-
-type testRandFloat64 struct{}
-
-func (testRandFloat64) Float64() float64 {
-	return rand.Float64()
 }
 
 func TestRateRule(t *testing.T) {
@@ -56,11 +47,11 @@ func TestRateRule(t *testing.T) {
 	// test normal sample rule (no properties) at different rates
 	// by calling Handle() 10,000 times and comparing actual rate
 	// to expected rate
-	rnd := testRandFloat64{}
+	rnd := flags.NewPooledRandomFloater()
 	testCases := []float64{1, 0, 0.01, 0.5, 0.8}
 	for _, rate := range testCases {
-		var iterations = 10000
-		var r = RateRule{Rate: rate}
+		iterations := 10000
+		r := RateRule{Rate: rate}
 		count := 0
 		for i := 0; i < iterations; i++ {
 			match, err := r.Handle(rnd, "test", map[string]string{})
@@ -74,14 +65,14 @@ func TestRateRule(t *testing.T) {
 		assert.InDelta(t, rate, actualRate, 0.02)
 	}
 
-	//test rate_by (w/ property) by generating random multi-dimension props
-	//and memoizing their Enabled checks(), and confirming same results
-	//when running Enabled again. Also checks if actual rate ~= expected rate
+	// test rate_by (w/ property) by generating random multi-dimension props
+	// and memoizing their Enabled checks(), and confirming same results
+	// when running Enabled again. Also checks if actual rate ~= expected rate
 	type resultKey struct{ a, b int }
 	matches := 0
 	misses := 0
 	results := map[resultKey]bool{}
-	var r = RateRule{0.5, []string{"a", "b", "c"}}
+	r := RateRule{0.5, []string{"a", "b", "c"}}
 	for a := 0; a < 100; a++ {
 		for b := 0; b < 100; b++ {
 			props := map[string]string{"a": fmt.Sprint(a), "b": fmt.Sprint(b), "c": "a"}
@@ -106,8 +97,8 @@ func TestRateRule(t *testing.T) {
 		}
 	}
 
-	//results should depend on flag name
-	//try a different flag name and check the same properties. we expect 50% overlap
+	// results should depend on flag name
+	// try a different flag name and check the same properties. we expect 50% overlap
 	disagree := 0
 	for a := 0; a < 100; a++ {
 		for b := 0; b < 100; b++ {
@@ -128,10 +119,23 @@ func TestRateRule(t *testing.T) {
 	assert.Error(t, err)
 }
 
+type (
+	OnRule  struct{}
+	OffRule struct{}
+)
+
+func (r *OnRule) Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error) {
+	return true, nil
+}
+
+func (r *OffRule) Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error) {
+	return false, nil
+}
+
 type dummyRulesBackend struct{}
 
-func (b *dummyRulesBackend) Refresh() ([]Flag, time.Time, error) {
-	var flags = []Flag{}
+func (b *dummyRulesBackend) Refresh() ([]flags.Flag, time.Time, error) {
+	flags := []flags.Flag{}
 	return flags, time.Time{}, nil
 }
 
@@ -148,7 +152,7 @@ func TestCascadingRules(t *testing.T) {
 			"test match on, miss off single rule",
 			true,
 			[]RuleInfo{
-				{&OnRule{}, RuleOn, RuleOff},
+				{&OnRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			true,
 		},
@@ -156,7 +160,7 @@ func TestCascadingRules(t *testing.T) {
 			"test match off, miss on single rule",
 			true,
 			[]RuleInfo{
-				{&OnRule{}, RuleOff, RuleOn},
+				{&OnRule{}, flags.RuleOff, flags.RuleOn},
 			},
 			false,
 		},
@@ -164,8 +168,8 @@ func TestCascadingRules(t *testing.T) {
 			"test match on, miss continue",
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOn, RuleContinue},
-				{&OnRule{}, RuleOn, RuleOff},
+				{&OffRule{}, flags.RuleOn, flags.RuleContinue},
+				{&OnRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			true,
 		},
@@ -173,8 +177,8 @@ func TestCascadingRules(t *testing.T) {
 			"test match on, miss off",
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOn, RuleOff},
-				{&OnRule{}, RuleOn, RuleOff},
+				{&OffRule{}, flags.RuleOn, flags.RuleOff},
+				{&OnRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			false,
 		},
@@ -182,8 +186,8 @@ func TestCascadingRules(t *testing.T) {
 			"test match continue",
 			true,
 			[]RuleInfo{
-				{&OnRule{}, RuleContinue, RuleOn},
-				{&OffRule{}, RuleOn, RuleOff},
+				{&OnRule{}, flags.RuleContinue, flags.RuleOn},
+				{&OffRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			false,
 		},
@@ -191,9 +195,9 @@ func TestCascadingRules(t *testing.T) {
 			"test 3 rules -- 2nd rule off",
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOff, RuleContinue},
-				{&OffRule{}, RuleContinue, RuleOff},
-				{&OnRule{}, RuleOn, RuleOff},
+				{&OffRule{}, flags.RuleOff, flags.RuleContinue},
+				{&OffRule{}, flags.RuleContinue, flags.RuleOff},
+				{&OnRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			false,
 		},
@@ -202,9 +206,9 @@ func TestCascadingRules(t *testing.T) {
 			// must match both 2nd and 3rd rule
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOff, RuleContinue},
-				{&OnRule{}, RuleContinue, RuleOff},
-				{&OnRule{}, RuleOn, RuleOff},
+				{&OffRule{}, flags.RuleOff, flags.RuleContinue},
+				{&OnRule{}, flags.RuleContinue, flags.RuleOff},
+				{&OnRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			true,
 		},
@@ -213,9 +217,9 @@ func TestCascadingRules(t *testing.T) {
 			// must match either 2nd rule or 3rd rule, only 3rd on
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOff, RuleContinue},
-				{&OffRule{}, RuleOn, RuleContinue},
-				{&OnRule{}, RuleOn, RuleOff},
+				{&OffRule{}, flags.RuleOff, flags.RuleContinue},
+				{&OffRule{}, flags.RuleOn, flags.RuleContinue},
+				{&OnRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			true,
 		},
@@ -224,9 +228,9 @@ func TestCascadingRules(t *testing.T) {
 			// must match either 2nd or 3rd, all 3 off
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOff, RuleContinue},
-				{&OffRule{}, RuleOn, RuleContinue},
-				{&OffRule{}, RuleOn, RuleOff},
+				{&OffRule{}, flags.RuleOff, flags.RuleContinue},
+				{&OffRule{}, flags.RuleOn, flags.RuleContinue},
+				{&OffRule{}, flags.RuleOn, flags.RuleOff},
 			},
 			false,
 		},
@@ -234,9 +238,9 @@ func TestCascadingRules(t *testing.T) {
 			"test default behavior is off if all rules are continue",
 			true,
 			[]RuleInfo{
-				{&OffRule{}, RuleOn, RuleContinue},
-				{&OffRule{}, RuleOn, RuleOff},
-				{&OnRule{}, RuleContinue, RuleOff},
+				{&OffRule{}, flags.RuleOn, flags.RuleContinue},
+				{&OffRule{}, flags.RuleOn, flags.RuleOff},
+				{&OnRule{}, flags.RuleContinue, flags.RuleOff},
 			},
 			false,
 		},
@@ -250,7 +254,7 @@ func TestCascadingRules(t *testing.T) {
 			"test return false categorically if active = false",
 			false,
 			[]RuleInfo{
-				{&OnRule{}, RuleOn, RuleOn},
+				{&OnRule{}, flags.RuleOn, flags.RuleOn},
 			},
 			false,
 		},
@@ -262,23 +266,4 @@ func TestCascadingRules(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, tc.expected, enabled, tc.name)
 	}
-}
-
-func TestTimestampFallback(t *testing.T) {
-	backend := jsonFileBackend{
-		filename: filepath.Join("testdata", "flags_example.json"),
-	}
-	_, updated, err := backend.Refresh()
-	assert.NoError(t, err)
-	assert.Equal(t, int64(1519247256), updated.Unix())
-
-	backendNoTimestamp := jsonFileBackend{
-		filename: filepath.Join("testdata", "flags_example_no_timestamp.json"),
-	}
-	_, updated, err = backendNoTimestamp.Refresh()
-	assert.NoError(t, err)
-
-	info, err := os.Stat(filepath.Join("testdata", "flags_example_no_timestamp.json"))
-	assert.NoError(t, err)
-	assert.Equal(t, info.ModTime(), updated)
 }

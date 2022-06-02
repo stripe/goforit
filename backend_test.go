@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/stripe/goforit/flags"
+	"github.com/stripe/goforit/flags1"
 )
 
 func TestParseFlagsCSV(t *testing.T) {
@@ -16,28 +19,28 @@ func TestParseFlagsCSV(t *testing.T) {
 	type testcase struct {
 		Name     string
 		Filename string
-		Expected []Flag
+		Expected []flags.Flag
 	}
 
 	cases := []testcase{
 		{
 			Name:     "BasicExample",
 			Filename: filepath.Join("testdata", "flags_example.csv"),
-			Expected: []Flag{
-				Flag1{
+			Expected: []flags.Flag{
+				flags1.Flag1{
 					"go.sun.money",
 					true,
-					[]RuleInfo{{&RateRule{Rate: 0}, RuleOn, RuleOff}},
+					[]flags1.RuleInfo{{&flags1.RateRule{Rate: 0}, flags.RuleOn, flags.RuleOff}},
 				},
-				Flag1{
+				flags1.Flag1{
 					"go.moon.mercury",
 					true,
 					nil,
 				},
-				Flag1{
+				flags1.Flag1{
 					"go.stars.money",
 					true,
-					[]RuleInfo{{&RateRule{Rate: 0.5}, RuleOn, RuleOff}},
+					[]flags1.RuleInfo{{&flags1.RateRule{Rate: 0.5}, flags.RuleOn, flags.RuleOff}},
 				},
 			},
 		},
@@ -64,28 +67,28 @@ func TestParseFlagsJSON(t *testing.T) {
 	type testcase struct {
 		Name     string
 		Filename string
-		Expected []Flag
+		Expected []flags.Flag
 	}
 
 	cases := []testcase{
 		{
 			Name:     "BasicExample",
 			Filename: filepath.Join("testdata", "flags_example.json"),
-			Expected: []Flag{
-				Flag1{
+			Expected: []flags.Flag{
+				flags1.Flag1{
 					"go.sun.moon",
 					true,
-					[]RuleInfo{
-						{&MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, RuleOff, RuleContinue},
-						{&MatchListRule{"host_name", []string{"apibox_789"}}, RuleOn, RuleContinue},
-						{&RateRule{0.01, []string{"cluster", "db"}}, RuleOn, RuleOff},
+					[]flags1.RuleInfo{
+						{&flags1.MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, flags.RuleOff, flags.RuleContinue},
+						{&flags1.MatchListRule{"host_name", []string{"apibox_789"}}, flags.RuleOn, flags.RuleContinue},
+						{&flags1.RateRule{0.01, []string{"cluster", "db"}}, flags.RuleOn, flags.RuleOff},
 					},
 				},
-				Flag1{
+				flags1.Flag1{
 					"go.sun.mercury",
 					true,
-					[]RuleInfo{
-						{&RateRule{Rate: 0.5}, RuleOn, RuleOff},
+					[]flags1.RuleInfo{
+						{&flags1.RateRule{Rate: 0.5}, flags.RuleOn, flags.RuleOff},
 					},
 				},
 			},
@@ -117,6 +120,24 @@ func TestMultipleDefinitions(t *testing.T) {
 
 	flagHolder, ok := g.flags.Get(repeatedFlag)
 	assert.True(t, ok)
-	assert.Equal(t, flagHolder.flag, Flag1{repeatedFlag, true, []RuleInfo{{&RateRule{Rate: lastValue}, RuleOn, RuleOff}}})
+	assert.Equal(t, flagHolder.flag, flags1.Flag1{repeatedFlag, true, []flags1.RuleInfo{{&flags1.RateRule{Rate: lastValue}, flags.RuleOn, flags.RuleOff}}})
+}
 
+func TestTimestampFallback(t *testing.T) {
+	backend := jsonFileBackend{
+		filename: filepath.Join("testdata", "flags_example.json"),
+	}
+	_, updated, err := backend.Refresh()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1519247256), updated.Unix())
+
+	backendNoTimestamp := jsonFileBackend{
+		filename: filepath.Join("testdata", "flags_example_no_timestamp.json"),
+	}
+	_, updated, err = backendNoTimestamp.Refresh()
+	assert.NoError(t, err)
+
+	info, err := os.Stat(filepath.Join("testdata", "flags_example_no_timestamp.json"))
+	assert.NoError(t, err)
+	assert.Equal(t, info.ModTime(), updated)
 }
