@@ -124,7 +124,7 @@ type RuleInfo struct {
 }
 
 type Rule interface {
-	Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error)
+	Handle(rnd flags.Rand, flag string, props map[string]string) (bool, error)
 }
 
 type MatchListRule struct {
@@ -163,7 +163,7 @@ func (f Flag1) Clamp() clamp.Clamp {
 	return clamp.MayVary
 }
 
-func (flag Flag1) Enabled(rnd flags.RandFloater, properties map[string]string) (bool, error) {
+func (flag Flag1) Enabled(rnd flags.Rand, properties map[string]string) (bool, error) {
 	// if flag is inactive, always return false
 	if !flag.Active {
 		return false, nil
@@ -206,7 +206,7 @@ func getProperty(props map[string]string, prop string) (string, error) {
 	}
 }
 
-func (r *RateRule) Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error) {
+func (r *RateRule) Handle(rnd flags.Rand, flag string, props map[string]string) (bool, error) {
 	if r.Properties != nil {
 		// get the sha1 of the properties values concat
 		h := sha1.New()
@@ -235,7 +235,7 @@ func (r *RateRule) Handle(rnd flags.RandFloater, flag string, props map[string]s
 	}
 }
 
-func (r *MatchListRule) Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error) {
+func (r *MatchListRule) Handle(rnd flags.Rand, flag string, props map[string]string) (bool, error) {
 	prop, err := getProperty(props, r.Property)
 	if err != nil {
 		return false, err

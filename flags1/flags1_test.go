@@ -47,7 +47,7 @@ func TestRateRule(t *testing.T) {
 	// test normal sample rule (no properties) at different rates
 	// by calling Handle() 10,000 times and comparing actual rate
 	// to expected rate
-	rnd := flags.NewPooledRandomFloater()
+	rnd := flags.NewRand()
 	testCases := []float64{1, 0, 0.01, 0.5, 0.8}
 	for _, rate := range testCases {
 		iterations := 10000
@@ -124,11 +124,11 @@ type (
 	OffRule struct{}
 )
 
-func (r *OnRule) Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error) {
+func (r *OnRule) Handle(rnd flags.Rand, flag string, props map[string]string) (bool, error) {
 	return true, nil
 }
 
-func (r *OffRule) Handle(rnd flags.RandFloater, flag string, props map[string]string) (bool, error) {
+func (r *OffRule) Handle(rnd flags.Rand, flag string, props map[string]string) (bool, error) {
 	return false, nil
 }
 
