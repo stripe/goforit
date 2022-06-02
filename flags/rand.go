@@ -4,23 +4,25 @@ import (
 	"github.com/stripe/goforit/internal/safepool"
 )
 
-type RandFloater interface {
+// Rand is a source of pseudo-random floating point numbers between [0, 1.0).
+type Rand interface {
+	// Float64 returns, as a float64, a pseudo-random number in the half-open interval [0.0,1.0).
 	Float64() float64
 }
 
-type pooledRandFloater struct {
+type pooledRand struct {
 	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
 	rndPool *safepool.RandPool
 }
 
-func (prf *pooledRandFloater) Float64() float64 {
-	rnd := prf.rndPool.Get()
-	defer prf.rndPool.Put(rnd)
+func (pr *pooledRand) Float64() float64 {
+	rnd := pr.rndPool.Get()
+	defer pr.rndPool.Put(rnd)
 	return rnd.Float64()
 }
 
-func NewPooledRandomFloater() RandFloater {
-	return &pooledRandFloater{
+func NewRand() Rand {
+	return &pooledRand{
 		rndPool: safepool.NewRandPool(),
 	}
 }
