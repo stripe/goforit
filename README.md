@@ -63,3 +63,7 @@ goforit is in an experimental state and may introduce breaking changes without n
 [JSON1_proposal]: https://github.com/stripe/goforit/blob/master/doc/rule_flags.md
 [JSON1]: https://github.com/stripe/goforit/blob/master/fixtures/flags_example.json
 [JSON2]: https://github.com/stripe/goforit/blob/master/fixtures/flags2_acceptance.json
+
+# License
+
+goforit is available under the MIT license.

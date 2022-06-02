@@ -3,6 +3,9 @@
 *.a
 *.so
 
+# emacs
+*~
+
 # Folders
 _obj
 _test
