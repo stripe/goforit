@@ -312,23 +312,36 @@ func BenchmarkEnabledWithArgs(b *testing.B) {
 	}{
 		{"flag5", "flag5"},
 	}
+	defaultTags := []map[string]string{
+		nil,
+		{
+			"foo": "a",
+			"bar": "b",
+		},
+	}
 
 	for _, backend := range backends {
 		for _, flag := range flags {
-			name := fmt.Sprintf("%s/%s", backend.name, flag.name)
-			b.Run(name, func(b *testing.B) {
-				g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
-				defer g.Close()
-				b.ResetTimer()
-				b.ReportAllocs()
-				b.RunParallel(func(pb *testing.PB) {
-					for pb.Next() {
-						_ = g.Enabled(context.Background(), flag.flag, map[string]string{
-							"token": "id_123",
-						})
+			for _, tags := range defaultTags {
+				name := fmt.Sprintf("%s/%s/%v", backend.name, flag.name, tags)
+				b.Run(name, func(b *testing.B) {
+					g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
+					if tags != nil {
+						g.AddDefaultTags(tags)
 					}
+					defer g.Close()
+					b.ResetTimer()
+					b.ReportAllocs()
+					b.RunParallel(func(pb *testing.PB) {
+						props := map[string]string{
+							"token": "id_123",
+						}
+						for pb.Next() {
+							_ = g.Enabled(context.Background(), flag.flag, props)
+						}
+					})
 				})
-			})
+			}
 		}
 	}
 }
