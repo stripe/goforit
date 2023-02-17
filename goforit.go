@@ -303,24 +303,8 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	case clamp.AlwaysOn:
 		enabled = true
 	default:
-		defaultTags := g.defaultTags.Load()
-
-		var mergedProperties map[string]string
-		if len(properties) == 0 {
-			// avoid allocating a merged array if we don't have any explicit properties/overrides
-			mergedProperties = defaultTags
-		} else {
-			mergedProperties = make(map[string]string, len(defaultTags)+len(properties))
-			for k, v := range defaultTags {
-				mergedProperties[k] = v
-			}
-			for k, v := range properties {
-				mergedProperties[k] = v
-			}
-		}
-
 		var err error
-		enabled, err = flag.flag.Enabled(g.rnd, mergedProperties)
+		enabled, err = flag.flag.Enabled(g.rnd, properties, g.defaultTags.Load())
 		if err != nil {
 			g.printf(err.Error())
 		}

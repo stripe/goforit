@@ -107,7 +107,17 @@ func TestFlags2Acceptance(t *testing.T) {
 	t.Parallel()
 
 	flags2AcceptanceTests(t, func(t *testing.T, flagname string, flag flags2.Flag2, properties map[string]string, expected bool, msg string) {
-		enabled, err := flag.Enabled(nil, properties)
+		enabled, err := flag.Enabled(nil, properties, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, enabled, msg)
+	})
+}
+
+func TestFlags2AcceptanceDefaultTags(t *testing.T) {
+	t.Parallel()
+
+	flags2AcceptanceTests(t, func(t *testing.T, flagname string, flag flags2.Flag2, properties map[string]string, expected bool, msg string) {
+		enabled, err := flag.Enabled(nil, nil, properties)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, enabled, msg)
 	})

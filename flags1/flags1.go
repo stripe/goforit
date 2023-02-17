@@ -163,7 +163,7 @@ func (f Flag1) Clamp() clamp.Clamp {
 	return clamp.MayVary
 }
 
-func (flag Flag1) Enabled(rnd flags.Rand, properties map[string]string) (bool, error) {
+func (flag Flag1) Enabled(rnd flags.Rand, properties, defaultTags map[string]string) (bool, error) {
 	// if flag is inactive, always return false
 	if !flag.Active {
 		return false, nil
@@ -172,6 +172,21 @@ func (flag Flag1) Enabled(rnd flags.Rand, properties map[string]string) (bool, e
 	if len(flag.Rules) == 0 {
 		return true, nil
 	}
+
+	var mergedProperties map[string]string
+	if len(properties) == 0 {
+		// avoid allocating a merged array if we don't have any explicit properties/overrides
+		mergedProperties = defaultTags
+	} else {
+		mergedProperties = make(map[string]string, len(defaultTags)+len(properties))
+		for k, v := range defaultTags {
+			mergedProperties[k] = v
+		}
+		for k, v := range properties {
+			mergedProperties[k] = v
+		}
+	}
+	properties = mergedProperties
 
 	for _, r := range flag.Rules {
 		res, err := r.Rule.Handle(rnd, flag.Name, properties)
