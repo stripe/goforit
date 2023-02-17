@@ -116,11 +116,24 @@ func TestMultipleDefinitions(t *testing.T) {
 
 	backend := BackendFromFile(filepath.Join("testdata", "flags_multiple_definitions.csv"))
 	g, _ := testGoforit(0, backend, stalenessCheckInterval)
+	defer func() { _ = g.Close() }()
 	g.RefreshFlags(backend)
 
 	flagHolder, ok := g.flags.Get(repeatedFlag)
 	assert.True(t, ok)
-	assert.Equal(t, flagHolder.flag, flags1.Flag1{repeatedFlag, true, []flags1.RuleInfo{{&flags1.RateRule{Rate: lastValue}, flags.RuleOn, flags.RuleOff}}})
+
+	expected := flags1.Flag1{
+		Name:   repeatedFlag,
+		Active: true,
+		Rules: []flags1.RuleInfo{
+			{
+				Rule:    &flags1.RateRule{Rate: lastValue},
+				OnMatch: flags.RuleOn,
+				OnMiss:  flags.RuleOff,
+			},
+		},
+	}
+	assert.Equal(t, expected, flagHolder.flag)
 }
 
 func TestTimestampFallback(t *testing.T) {
