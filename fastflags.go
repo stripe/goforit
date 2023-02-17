@@ -1,11 +1,9 @@
 package goforit
 
 import (
+	"github.com/stripe/goforit/flags"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	"github.com/stripe/goforit/flags"
 )
 
 // fastFlags is a structure for fast access to read-mostly feature flags.
@@ -37,7 +35,7 @@ func (ff *fastFlags) Get(key string) (flagHolder, bool) {
 	}
 }
 
-func (ff *fastFlags) Update(refreshedFlags []flags.Flag, enabledTickerInterval time.Duration) {
+func (ff *fastFlags) Update(refreshedFlags []flags.Flag) {
 	ff.writerLock.Lock()
 	defer ff.writerLock.Unlock()
 

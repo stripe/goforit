@@ -73,17 +73,17 @@ func newPooledRandomFloater() *pooledRandFloater {
 type goforit struct {
 	ticker *time.Ticker
 
-	stalenessMtx       sync.RWMutex
-	stalenessThreshold time.Duration
+	stalenessThreshold atomic.Pointer[time.Duration]
 
 	flags *fastFlags
 
-	enabledTickerInterval time.Duration
-	// If a flag doesn't exist, this shared ticker will be used.
+	// stalenessTicker is used to tell Enabled it should check for staleness.
 	stalenessTicker *time.Ticker
 
+	shouldCheckStaleness atomic.Bool
+
 	// Unix time in nanos.
-	lastFlagRefreshTime int64
+	lastFlagRefreshTime atomic.Int64
 
 	defaultTags *fastTags
 
@@ -172,9 +172,11 @@ type flagHolder struct {
 }
 
 func (g *goforit) getStalenessThreshold() time.Duration {
-	g.stalenessMtx.RLock()
-	defer g.stalenessMtx.RUnlock()
-	return g.stalenessThreshold
+	if t := g.stalenessThreshold.Load(); t != nil {
+		return *t
+	}
+
+	return 0
 }
 
 func (g *goforit) logStaleCheck() bool {
@@ -222,7 +224,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	select {
 	case <-tickerC:
 		defer func() {
-			last := atomic.LoadInt64(&g.lastFlagRefreshTime)
+			last := g.lastFlagRefreshTime.Load()
 			// time.Duration is conveniently measured in nanoseconds.
 			lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
 			g.staleCheck(lastRefreshTime, lastRefreshMetricName, 1,
@@ -310,9 +312,9 @@ func (g *goforit) TryRefreshFlags(backend Backend) error {
 		g.printf("Error refreshing flags: %s", err)
 		return err
 	}
-	atomic.StoreInt64(&g.lastFlagRefreshTime, time.Now().UnixNano())
+	g.lastFlagRefreshTime.Store(time.Now().UnixNano())
 
-	g.flags.Update(refreshedFlags, g.enabledTickerInterval)
+	g.flags.Update(refreshedFlags)
 
 	g.staleCheck(updated, "goforit.flags.cache_file_age_s", 0.1,
 		"Backend is stale (%s) past our threshold (%s)", false)
@@ -321,9 +323,7 @@ func (g *goforit) TryRefreshFlags(backend Backend) error {
 }
 
 func (g *goforit) SetStalenessThreshold(threshold time.Duration) {
-	g.stalenessMtx.Lock()
-	defer g.stalenessMtx.Unlock()
-	g.stalenessThreshold = threshold
+	g.stalenessThreshold.Store(&threshold)
 }
 
 func (g *goforit) AddDefaultTags(tags map[string]string) {
