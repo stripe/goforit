@@ -19,8 +19,8 @@ import (
 const DefaultStatsdAddr = "127.0.0.1:8200"
 
 const (
-	lastAssertInterval    = 5 * time.Minute
-	enabledTickerInterval = 10 * time.Second
+	lastAssertInterval     = 5 * time.Minute
+	stalenessCheckInterval = 10 * time.Second
 )
 
 const lastRefreshMetricName = "goforit.flags.last_refresh_s"
@@ -31,7 +31,6 @@ type StatsdClient interface {
 	Histogram(string, float64, []string, float64) error
 	Gauge(string, float64, []string, float64) error
 	Count(string, int64, []string, float64) error
-	SimpleServiceCheck(string, statsd.ServiceCheckStatus) error
 }
 
 // Goforit is the main interface for the library to check if flags enabled, refresh flags
@@ -81,7 +80,7 @@ type goforit struct {
 
 	enabledTickerInterval time.Duration
 	// If a flag doesn't exist, this shared ticker will be used.
-	enabledTicker *time.Ticker
+	stalenessTicker *time.Ticker
 
 	// Unix time in nanos.
 	lastFlagRefreshTime int64
@@ -104,21 +103,20 @@ type goforit struct {
 
 const DefaultInterval = 30 * time.Second
 
-func newWithoutInit(enabledTickerInterval time.Duration) *goforit {
+func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
 	return &goforit{
-		flags:                 newFastFlags(),
-		defaultTags:           newFastTags(),
-		stats:                 new(statsd.NoOpClient),
-		enabledTickerInterval: enabledTickerInterval,
-		enabledTicker:         time.NewTicker(enabledTickerInterval),
-		rnd:                   newPooledRandomFloater(),
-		printf:                log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
+		flags:           newFastFlags(),
+		defaultTags:     newFastTags(),
+		stats:           new(statsd.NoOpClient),
+		stalenessTicker: time.NewTicker(stalenessTickerInterval),
+		rnd:             newPooledRandomFloater(),
+		printf:          log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 	}
 }
 
 // New creates a new goforit
 func New(interval time.Duration, backend Backend, opts ...Option) Goforit {
-	g := newWithoutInit(enabledTickerInterval)
+	g := newWithoutInit(stalenessCheckInterval)
 	g.init(interval, backend, opts...)
 	// some users may depend on legacy behavior of creating a
 	// non-dependency-injected statsd client.
@@ -169,9 +167,8 @@ func DeletedCallback(cb evaluationCallback) Option {
 }
 
 type flagHolder struct {
-	flag          flags.Flag
-	clamp         clamp.Clamp
-	enabledTicker *time.Ticker
+	flag  flags.Flag
+	clamp clamp.Clamp
 }
 
 func (g *goforit) getStalenessThreshold() time.Duration {
@@ -220,12 +217,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
 	flag, flagExists := g.flags.Get(name)
-	var tickerC <-chan time.Time
-	if flagExists {
-		tickerC = flag.enabledTicker.C
-	} else {
-		tickerC = g.enabledTicker.C
-	}
+	tickerC := g.stalenessTicker.C
 
 	select {
 	case <-tickerC:
@@ -294,13 +286,6 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	return
 }
 
-func (g *goforit) newHolder(flag flags.Flag, ticker *time.Ticker) flagHolder {
-	if ticker == nil {
-		ticker = time.NewTicker(g.enabledTickerInterval)
-	}
-	return flagHolder{flag: flag, clamp: flag.Clamp(), enabledTicker: ticker}
-}
-
 // RefreshFlags will use the provided thunk function to
 // fetch all feature flags and update the internal cache.
 // The thunk provided can use a variety of mechanisms for
@@ -319,13 +304,8 @@ func (g *goforit) RefreshFlags(backend Backend) {
 // the backend refresh fails.
 func (g *goforit) TryRefreshFlags(backend Backend) error {
 	// Ask the backend for the flags
-	var checkStatus statsd.ServiceCheckStatus
-	defer func() {
-		_ = g.stats.SimpleServiceCheck("goforit.refreshFlags.present", checkStatus)
-	}()
 	refreshedFlags, updated, err := backend.Refresh()
 	if err != nil {
-		checkStatus = statsd.Warn
 		_ = g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
 		g.printf("Error refreshing flags: %s", err)
 		return err
@@ -400,7 +380,7 @@ func (g *goforit) Close() error {
 
 		g.flags.Close()
 
-		g.enabledTicker.Stop()
+		g.stalenessTicker.Stop()
 	}
 	return nil
 }

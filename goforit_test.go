@@ -106,7 +106,7 @@ func TestEnabled(t *testing.T) {
 	const iterations = 100000
 
 	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
-	g, _ := testGoforit(DefaultInterval, backend, enabledTickerInterval)
+	g, _ := testGoforit(DefaultInterval, backend, stalenessCheckInterval)
 	defer g.Close()
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
@@ -169,7 +169,7 @@ func TestRefresh(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyBackend{}
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
 	assert.False(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
@@ -191,7 +191,7 @@ func TestNonExistent(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyBackend{}
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 
 	g.deletedCB = func(name string, enabled bool) {
@@ -213,7 +213,7 @@ func TestTryRefresh(t *testing.T) {
 	t.Parallel()
 
 	backend := &errorBackend{}
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 
 	err := g.TryRefreshFlags(backend)
@@ -224,21 +224,17 @@ func TestRefreshTicker(t *testing.T) {
 	t.Parallel()
 
 	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
-	g, _ := testGoforit(10*time.Second, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Second, backend, stalenessCheckInterval)
 	defer g.Close()
 
-	earthTicker := time.NewTicker(time.Nanosecond)
-	g.flags.storeForTesting("go.earth.money", flagHolder{flags1.Flag1{"go.earth.money", true, nil}, clamp.MayVary, earthTicker})
-	f, ok := g.flags.Get("go.moon.mercury")
-	assert.True(t, ok)
-	moonTicker := f.enabledTicker
+	g.flags.storeForTesting("go.earth.money", flagHolder{flags1.Flag1{"go.earth.money", true, nil}, clamp.MayVary})
 	g.flags.deleteForTesting("go.stars.money")
 	// Give tickers time to run.
 	time.Sleep(time.Millisecond)
 
 	g.RefreshFlags(backend)
 
-	_, ok = g.flags.Get("go.sun.money")
+	_, ok := g.flags.Get("go.sun.money")
 	assert.True(t, ok)
 	_, ok = g.flags.Get("go.moon.mercury")
 	assert.True(t, ok)
@@ -246,23 +242,6 @@ func TestRefreshTicker(t *testing.T) {
 	assert.True(t, ok)
 	_, ok = g.flags.Get("go.earth.money")
 	assert.False(t, ok)
-
-	// Make sure that the ticker was preserved.
-	f, ok = g.flags.Get("go.moon.mercury")
-	assert.True(t, ok)
-	assert.Equal(t, moonTicker, f.enabledTicker)
-
-	// Make sure that the deleted flag's ticker was stopped.
-	_, ok = <-earthTicker.C
-	assert.True(t, ok)
-	// If the ticker wasn't deleted, make sure it can run again.
-	time.Sleep(time.Millisecond)
-	select {
-	case _, ok = <-earthTicker.C:
-		// If the ticker was stopped, there's no way we'd get a 2nd tick.
-		assert.False(t, ok)
-	default:
-	}
 }
 
 func BenchmarkEnabled(b *testing.B) {
@@ -285,7 +264,7 @@ func BenchmarkEnabled(b *testing.B) {
 		for _, flag := range flags {
 			name := fmt.Sprintf("%s/%s", backend.name, flag.name)
 			b.Run(name, func(b *testing.B) {
-				g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
+				g, _ := testGoforit(10*time.Microsecond, backend.backend, stalenessCheckInterval)
 				defer g.Close()
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -325,7 +304,7 @@ func BenchmarkEnabledWithArgs(b *testing.B) {
 			for _, tags := range defaultTags {
 				name := fmt.Sprintf("%s/%s/%v", backend.name, flag.name, tags)
 				b.Run(name, func(b *testing.B) {
-					g, _ := testGoforit(10*time.Microsecond, backend.backend, enabledTickerInterval)
+					g, _ := testGoforit(10*time.Microsecond, backend.backend, stalenessCheckInterval)
 					if tags != nil {
 						g.AddDefaultTags(tags)
 					}
@@ -365,7 +344,7 @@ func TestDefaultTags(t *testing.T) {
 	t.Parallel()
 
 	const iterations = 100000
-	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{}, enabledTickerInterval)
+	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{}, stalenessCheckInterval)
 	defer g.Close()
 
 	// if no properties passed, and no default tags added, then should return false
@@ -402,7 +381,7 @@ func TestOverride(t *testing.T) {
 	t.Parallel()
 
 	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 	g.RefreshFlags(backend)
 
@@ -470,7 +449,7 @@ func TestOverride(t *testing.T) {
 func TestOverrideWithoutInit(t *testing.T) {
 	t.Parallel()
 
-	g, _ := testGoforit(0, nil, enabledTickerInterval)
+	g, _ := testGoforit(0, nil, stalenessCheckInterval)
 
 	// Everything is false by default.
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
@@ -503,7 +482,7 @@ func TestCacheFileMetric(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 
 	time.Sleep(50 * time.Millisecond)
@@ -546,34 +525,38 @@ func TestRefreshCycleMetric(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-10 * time.Minute)}
-	g, _ := testGoforit(10*time.Millisecond, backend, time.Second)
+	g, _ := testGoforit(10*time.Millisecond, backend, 100*time.Microsecond)
 	defer g.Close()
 
-	tickerC := make(chan time.Time, 1)
 	flag, _ := g.flags.Get("go.sun.money")
-	flag.enabledTicker = &time.Ticker{C: tickerC}
 	g.flags.storeForTesting("go.sun.money", flag)
 
 	iters := 30
 	for i := 0; i < iters; i++ {
-		tickerC <- time.Now()
 		g.Enabled(nil, "go.sun.money", nil)
 		time.Sleep(3 * time.Millisecond)
 	}
+
+	initialMetricCount := len(g.stats.(*mockStatsd).getHistogramValues(lastRefreshMetricName))
+
+	// subtract 2 for iters to avoid flakey tests
+	assert.GreaterOrEqual(t, initialMetricCount, iters-2)
 
 	// want to stop ticker to simulate Refresh() hanging
 	g.ticker.Stop()
 	time.Sleep(3 * time.Millisecond)
 
 	for i := 0; i < iters; i++ {
-		tickerC <- time.Now()
 		g.Enabled(nil, "go.sun.money", nil)
+		// sleep to ensure the g.stalenessTicker pumps
 		time.Sleep(3 * time.Millisecond)
 	}
 
-	values := g.stats.(*mockStatsd).getHistogramValues("goforit.flags.last_refresh_s")
+	values := g.stats.(*mockStatsd).getHistogramValues(lastRefreshMetricName)
+	assert.Greater(t, len(values), initialMetricCount)
+	assert.GreaterOrEqual(t, len(values), iters-2)
 	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
-	for i := 0; i < iters; i++ {
+	for i := 0; i < initialMetricCount; i++ {
 		v := values[i]
 		// Should be small. Really 10ms, but add a bit of wiggle room
 		assert.True(t, v < 0.03)
@@ -581,7 +564,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 
 	last := math.Inf(-1)
 	large := 0
-	for i := iters; i < 2*iters; i++ {
+	for i := initialMetricCount; i < len(values); i++ {
 		v := values[i]
 		assert.True(t, v > last, fmt.Sprintf("%d: %v: %v", i, v, values))
 		last = v
@@ -597,7 +580,7 @@ func TestStaleFile(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
-	g, buf := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, buf := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 	g.SetStalenessThreshold(10*time.Minute + 42*time.Second)
 
@@ -616,7 +599,7 @@ func TestNoStaleFile(t *testing.T) {
 	t.Parallel()
 
 	backend := &dummyAgeBackend{t: time.Now().Add(-1000 * time.Hour)}
-	g, buf := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, buf := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 
 	time.Sleep(50 * time.Millisecond)
@@ -657,7 +640,7 @@ func TestEvaluationCallback(t *testing.T) {
 
 	evaluated := map[flagStatus]int{}
 	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
-	g := New(enabledTickerInterval, backend, EvaluationCallback(func(flag string, active bool) {
+	g := New(stalenessCheckInterval, backend, EvaluationCallback(func(flag string, active bool) {
 		evaluated[flagStatus{flag, active}] += 1
 	}))
 	defer g.Close()
@@ -676,7 +659,7 @@ func TestDeletionCallback(t *testing.T) {
 
 	deleted := map[flagStatus]int{}
 	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_acceptance.json"))
-	g := New(enabledTickerInterval, backend, DeletedCallback(func(flag string, active bool) {
+	g := New(stalenessCheckInterval, backend, DeletedCallback(func(flag string, active bool) {
 		deleted[flagStatus{flag, active}] += 1
 	}))
 	defer g.Close()
