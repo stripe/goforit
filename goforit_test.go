@@ -132,11 +132,11 @@ type (
 	OffRule struct{}
 )
 
-func (r *OnRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
+func (r *OnRule) Handle(rnd *pooledRandFloater, flag string, props map[string]string) (bool, error) {
 	return true, nil
 }
 
-func (r *OffRule) Handle(rnd randFloater, flag string, props map[string]string) (bool, error) {
+func (r *OffRule) Handle(rnd *pooledRandFloater, flag string, props map[string]string) (bool, error) {
 	return false, nil
 }
 

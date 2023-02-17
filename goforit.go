@@ -51,10 +51,6 @@ type (
 	evaluationCallback func(flag string, active bool)
 )
 
-type randFloater interface {
-	Float64() float64
-}
-
 type pooledRandFloater struct {
 	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
 	rndPool *safepool.RandPool
@@ -73,21 +69,24 @@ func newPooledRandomFloater() *pooledRandFloater {
 }
 
 type goforit struct {
+	flags       *fastFlags
+	defaultTags *fastTags
+	evalCB      evaluationCallback
+	deletedCB   evaluationCallback
+	// math.Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
+	rnd                  *pooledRandFloater
+	shouldCheckStaleness atomic.Bool
+	ctxOverrideEnabled   bool
+
 	ticker *time.Ticker
 
 	stalenessThreshold atomic.Pointer[time.Duration]
 
-	flags *fastFlags
-
 	// stalenessTicker is used to tell Enabled it should check for staleness.
 	stalenessTicker *time.Ticker
 
-	shouldCheckStaleness atomic.Bool
-
 	// Unix time in nanos.
 	lastFlagRefreshTime atomic.Int64
-
-	defaultTags *fastTags
 
 	stats            StatsdClient
 	shouldCloseStats bool
@@ -96,12 +95,7 @@ type goforit struct {
 	lastAssertMtx sync.Mutex
 	lastAssert    time.Time
 
-	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
-	rnd randFloater
-
-	printf    printFunc
-	evalCB    evaluationCallback
-	deletedCB evaluationCallback
+	printf printFunc
 
 	isClosed atomic.Bool
 	done     func()
@@ -115,14 +109,15 @@ func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
 	ctx, done := context.WithCancel(context.Background())
 
 	g := &goforit{
-		flags:           newFastFlags(),
-		defaultTags:     newFastTags(),
-		stats:           new(statsd.NoOpClient),
-		stalenessTicker: time.NewTicker(stalenessTickerInterval),
-		rnd:             newPooledRandomFloater(),
-		printf:          log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
-		done:            done,
-		backgroundCtx:   ctx,
+		flags:              newFastFlags(),
+		defaultTags:        newFastTags(),
+		rnd:                newPooledRandomFloater(),
+		ctxOverrideEnabled: true,
+		stats:              new(statsd.NoOpClient),
+		stalenessTicker:    time.NewTicker(stalenessTickerInterval),
+		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf, //
+		done:               done,
+		backgroundCtx:      ctx,
 	}
 
 	// set an atomic value async rather than check channel inline (which takes a mutex)
@@ -168,6 +163,12 @@ func (o optionFunc) apply(g *goforit) {
 func WithOwnedStats(isOwned bool) Option {
 	return optionFunc(func(g *goforit) {
 		g.shouldCloseStats = isOwned
+	})
+}
+
+func WithContextOverrideDisabled(disabled bool) Option {
+	return optionFunc(func(g *goforit) {
+		g.ctxOverrideEnabled = !disabled
 	})
 }
 
@@ -283,7 +284,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	}
 
 	// Check for an override.
-	if ctx != nil {
+	if g.ctxOverrideEnabled && ctx != nil {
 		if ov, ok := ctx.Value(overrideContextKey).(overrides); ok {
 			if enabled, ok = ov[name]; ok {
 				return
