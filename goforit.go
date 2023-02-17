@@ -2,7 +2,6 @@ package goforit
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -19,9 +18,12 @@ import (
 // DefaultStatsdAddr is the address we will emit metrics to if not overridden.
 const DefaultStatsdAddr = "127.0.0.1:8200"
 
-const lastAssertInterval = 5 * time.Minute
+const (
+	lastAssertInterval    = 5 * time.Minute
+	enabledTickerInterval = 10 * time.Second
+)
 
-const enabledTickerInterval = 10 * time.Second
+const lastRefreshMetricName = "goforit.flags.last_refresh_s"
 
 // StatsdClient is the set of methods required to emit metrics to statsd, for
 // customizing behavior or mocking.
@@ -213,10 +215,8 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 	}
 }
 
-// Enabled returns a boolean indicating
-// whether or not the flag should be considered
-// enabled. It returns false if no flag with the specified
-// name is found
+// Enabled returns true if the flag should be considered enabled.
+// It returns false if no flag with the specified name is found.
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
 	flag, flagExists := g.flags.Get(name)
@@ -230,15 +230,10 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	select {
 	case <-tickerC:
 		defer func() {
-			var gauge float64
-			if enabled {
-				gauge = 1
-			}
-			_ = g.stats.Gauge("goforit.flags.enabled", gauge, []string{fmt.Sprintf("flag:%s", name)}, 1)
 			last := atomic.LoadInt64(&g.lastFlagRefreshTime)
 			// time.Duration is conveniently measured in nanoseconds.
 			lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
-			g.staleCheck(lastRefreshTime, "goforit.flags.last_refresh_s", 1,
+			g.staleCheck(lastRefreshTime, lastRefreshMetricName, 1,
 				"Refresh cycle has not run in %s, past our threshold (%s)", true)
 		}()
 	default:
