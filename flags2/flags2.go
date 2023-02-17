@@ -215,10 +215,11 @@ func (r Rule2) matches(properties, defaultTags map[string]string) (bool, error) 
 func (r Rule2) hashValue(seed, val string) float64 {
 	h := sha1.New()
 	h.Write([]byte(seed))
-	h.Write([]byte("."))
+	h.Write([]byte{'.'})
 	h.Write([]byte(val))
-	sum := h.Sum(nil)
-	ival := binary.BigEndian.Uint16(sum[:])
+	buf := make([]byte, 0, sha1.Size)
+	sum := h.Sum(buf)
+	ival := binary.BigEndian.Uint16(sum)
 	return float64(ival) / float64(1<<16)
 }
 
