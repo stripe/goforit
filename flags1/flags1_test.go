@@ -263,7 +263,7 @@ func TestCascadingRules(t *testing.T) {
 
 	for _, tc := range testCases {
 		flag := Flag1{tc.name, tc.active, tc.rules}
-		enabled, err := flag.Enabled(nil, map[string]string{})
+		enabled, err := flag.Enabled(nil, map[string]string{}, map[string]string{})
 		assert.NoError(t, err)
 		assert.Equal(t, tc.expected, enabled, tc.name)
 	}

@@ -25,7 +25,7 @@ const (
 	HashByRandom = "_random"
 )
 
-// A newer, more sophisticated type of flag!
+// Predicate2 is a newer, more sophisticated type of flag!
 //
 // Each Flag2 contains a list of rules, and each rule contains a list of predicates.
 // When querying a flag, the first rule whose predicates match is applied.
@@ -92,9 +92,9 @@ func (f Flag2) FlagName() string {
 	return f.Name
 }
 
-func (f Flag2) Enabled(rnd flags.Rand, properties map[string]string) (bool, error) {
+func (f Flag2) Enabled(rnd flags.Rand, properties, defaultTags map[string]string) (bool, error) {
 	for _, rule := range f.Rules {
-		match, err := rule.matches(properties)
+		match, err := rule.matches(properties, defaultTags)
 		if err != nil {
 			return false, err
 		}
@@ -102,7 +102,7 @@ func (f Flag2) Enabled(rnd flags.Rand, properties map[string]string) (bool, erro
 			continue
 		}
 
-		return rule.evaluate(rnd, f.Seed, properties)
+		return rule.evaluate(rnd, f.Seed, properties, defaultTags)
 	}
 
 	// If no rules match, the flag is off
@@ -170,8 +170,11 @@ func (f Flag2) IsDeleted() bool {
 	return f.Deleted
 }
 
-func (p Predicate2) matches(properties map[string]string) (bool, error) {
+func (p Predicate2) matches(properties, defaultTags map[string]string) (bool, error) {
 	val, present := properties[p.Attribute]
+	if !present {
+		val, present = defaultTags[p.Attribute]
+	}
 	switch p.Operation {
 	case OpIn:
 		return p.Values[val], nil
@@ -186,15 +189,18 @@ func (p Predicate2) matches(properties map[string]string) (bool, error) {
 	}
 }
 
-func (r Rule2) matches(properties map[string]string) (bool, error) {
+func (r Rule2) matches(properties, defaultTags map[string]string) (bool, error) {
 	_, hashPresent := properties[r.HashBy]
+	if !hashPresent {
+		_, hashPresent = defaultTags[r.HashBy]
+	}
 	if !hashPresent && r.HashBy != HashByRandom && r.Percent > PercentOff && r.Percent < PercentOn {
 		// We have no way to calculate a percentage, so the specced behavior is to skip this rule
 		return false, nil
 	}
 
 	for _, pred := range r.Predicates {
-		match, err := pred.matches(properties)
+		match, err := pred.matches(properties, defaultTags)
 		if err != nil {
 			return false, err
 		}
@@ -216,7 +222,7 @@ func (r Rule2) hashValue(seed, val string) float64 {
 	return float64(ival) / float64(1<<16)
 }
 
-func (r Rule2) evaluate(rnd flags.Rand, seed string, properties map[string]string) (bool, error) {
+func (r Rule2) evaluate(rnd flags.Rand, seed string, properties, defaultTags map[string]string) (bool, error) {
 	if r.Percent >= PercentOn {
 		return true, nil
 	}
@@ -228,6 +234,9 @@ func (r Rule2) evaluate(rnd flags.Rand, seed string, properties map[string]strin
 		return rnd.Float64() < r.Percent, nil
 	}
 
-	val := properties[r.HashBy]
+	val, found := properties[r.HashBy]
+	if !found {
+		val = defaultTags[r.HashBy]
+	}
 	return r.hashValue(seed, val) < r.Percent, nil
 }
