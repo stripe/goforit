@@ -19,8 +19,6 @@ jobs:
       run: |
         echo "GOPATH=$RUNNER_TEMP/go" >> $GITHUB_ENV
         echo "PATH=$PATH:$RUNNER_TEMP/go/bin" >> $GITHUB_ENV
-    - name: Get govendor
-      run: go get -u -v github.com/kardianos/govendor
     - name: Link source
       run: |
         mkdir -p $GOPATH/src/github.com/stripe
@@ -28,4 +26,5 @@ jobs:
     - name: Run tests
       run: |
         cd $GOPATH/src/github.com/stripe/goforit 
-        govendor test -v -timeout 10s +local
+        go test -v -shuffle on -timeout 10s ./...
+        go test -v -race -shuffle on -timeout 10s ./...
