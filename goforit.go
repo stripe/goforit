@@ -104,7 +104,7 @@ type goforit struct {
 const DefaultInterval = 30 * time.Second
 
 func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
-	return &goforit{
+	g := &goforit{
 		flags:           newFastFlags(),
 		defaultTags:     newFastTags(),
 		stats:           new(statsd.NoOpClient),
@@ -112,6 +112,15 @@ func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
 		rnd:             newPooledRandomFloater(),
 		printf:          log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 	}
+
+	// set an atomic value async rather than check channel inline (which takes a mutex)
+	go func() {
+		for range g.stalenessTicker.C {
+			g.shouldCheckStaleness.Store(true)
+		}
+	}()
+
+	return g
 }
 
 // New creates a new goforit
@@ -214,23 +223,27 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 	}
 }
 
+//go:noinline
+func (g *goforit) doStaleCheck() {
+	last := g.lastFlagRefreshTime.Load()
+	// time.Duration is conveniently measured in nanoseconds.
+	lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
+	g.staleCheck(lastRefreshTime, lastRefreshMetricName, 1,
+		"Refresh cycle has not run in %s, past our threshold (%s)", true)
+}
+
 // Enabled returns true if the flag should be considered enabled.
 // It returns false if no flag with the specified name is found.
 func (g *goforit) Enabled(ctx context.Context, name string, properties map[string]string) (enabled bool) {
 	enabled = false
 	flag, flagExists := g.flags.Get(name)
-	tickerC := g.stalenessTicker.C
 
-	select {
-	case <-tickerC:
-		defer func() {
-			last := g.lastFlagRefreshTime.Load()
-			// time.Duration is conveniently measured in nanoseconds.
-			lastRefreshTime := time.Unix(last/int64(time.Second), last%int64(time.Second))
-			g.staleCheck(lastRefreshTime, lastRefreshMetricName, 1,
-				"Refresh cycle has not run in %s, past our threshold (%s)", true)
-		}()
-	default:
+	// nested loop is to avoid a Swap/write to the bool in the common case,
+	// but still ensure only a single Enabled caller does the staleness check.
+	if g.shouldCheckStaleness.Load() {
+		if stillShouldCheck := g.shouldCheckStaleness.Swap(false); stillShouldCheck {
+			g.doStaleCheck()
+		}
 	}
 
 	if g.evalCB != nil {
