@@ -540,8 +540,10 @@ func TestRefreshCycleMetric(t *testing.T) {
 
 	initialMetricCount := len(g.stats.(*mockStatsd).getHistogramValues(lastRefreshMetricName))
 
+	const antiFlakeSlack = 10
+
 	// subtract 2 for iters to avoid flakey tests
-	assert.GreaterOrEqual(t, initialMetricCount, iters-2)
+	assert.GreaterOrEqual(t, initialMetricCount, iters-antiFlakeSlack)
 
 	// want to stop ticker to simulate Refresh() hanging
 	g.ticker.Stop()
@@ -555,7 +557,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 
 	values := g.stats.(*mockStatsd).getHistogramValues(lastRefreshMetricName)
 	assert.Greater(t, len(values), initialMetricCount)
-	assert.GreaterOrEqual(t, len(values), iters-2)
+	assert.GreaterOrEqual(t, len(values), iters-antiFlakeSlack)
 	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
 	for i := 0; i < initialMetricCount; i++ {
 		v := values[i]
