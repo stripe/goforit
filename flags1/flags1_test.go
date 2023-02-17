@@ -2,6 +2,7 @@ package flags1
 
 import (
 	"fmt"
+	"go.uber.org/goleak"
 	"testing"
 	"time"
 
@@ -266,4 +267,8 @@ func TestCascadingRules(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, tc.expected, enabled, tc.name)
 	}
+}
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }

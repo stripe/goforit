@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.uber.org/goleak"
 	"io"
 	"log"
 	"math"
@@ -16,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/stripe/goforit/clamp"
@@ -31,15 +31,15 @@ type mockStatsd struct {
 	histogramValues map[string][]float64
 }
 
+func (m *mockStatsd) Close() error {
+	return nil
+}
+
 func (m *mockStatsd) Gauge(string, float64, []string, float64) error {
 	return nil
 }
 
 func (m *mockStatsd) Count(string, int64, []string, float64) error {
-	return nil
-}
-
-func (m *mockStatsd) SimpleServiceCheck(string, statsd.ServiceCheckStatus) error {
 	return nil
 }
 
@@ -450,6 +450,7 @@ func TestOverrideWithoutInit(t *testing.T) {
 	t.Parallel()
 
 	g, _ := testGoforit(0, nil, stalenessCheckInterval)
+	defer func() { _ = g.Close() }()
 
 	// Everything is false by default.
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
@@ -613,6 +614,7 @@ func TestStaleRefresh(t *testing.T) {
 
 	backend := &dummyBackend{}
 	g, buf := testGoforit(10*time.Millisecond, backend, time.Nanosecond)
+	defer func() { _ = g.Close() }()
 	g.SetStalenessThreshold(50 * time.Millisecond)
 
 	// Simulate stopping refresh
@@ -640,9 +642,13 @@ func TestEvaluationCallback(t *testing.T) {
 
 	evaluated := map[flagStatus]int{}
 	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
-	g := New(stalenessCheckInterval, backend, EvaluationCallback(func(flag string, active bool) {
-		evaluated[flagStatus{flag, active}] += 1
-	}))
+	g := New(stalenessCheckInterval,
+		backend,
+		EvaluationCallback(func(flag string, active bool) {
+			evaluated[flagStatus{flag, active}] += 1
+		}),
+		WithOwnedStats(true),
+	)
 	defer g.Close()
 
 	g.Enabled(nil, "go.sun.money", nil)
@@ -659,9 +665,13 @@ func TestDeletionCallback(t *testing.T) {
 
 	deleted := map[flagStatus]int{}
 	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_acceptance.json"))
-	g := New(stalenessCheckInterval, backend, DeletedCallback(func(flag string, active bool) {
-		deleted[flagStatus{flag, active}] += 1
-	}))
+	g := New(stalenessCheckInterval,
+		backend,
+		DeletedCallback(func(flag string, active bool) {
+			deleted[flagStatus{flag, active}] += 1
+		}),
+		WithOwnedStats(true),
+	)
 	defer g.Close()
 
 	g.Enabled(nil, "on_flag", nil)
@@ -671,4 +681,8 @@ func TestDeletionCallback(t *testing.T) {
 
 	assert.Equal(t, 1, len(deleted))
 	assert.Equal(t, 2, deleted[flagStatus{"deleted_on_flag", true}])
+}
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }

@@ -14,7 +14,7 @@ func Example() {
 	// flags.csv contains comma-separated flag names and sample rates.
 	// See: testdata/flags_example.csv
 	backend := goforit.BackendFromFile("flags.csv")
-	flags := goforit.New(30*time.Second, backend)
+	flags := goforit.New(30*time.Second, backend, goforit.WithOwnedStats(true))
 	defer func() { _ = flags.Close() }()
 
 	if flags.Enabled(ctx, "go.sun.mercury", nil) {

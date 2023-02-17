@@ -2,6 +2,7 @@ package goforit
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"sync"
@@ -31,6 +32,7 @@ type StatsdClient interface {
 	Histogram(string, float64, []string, float64) error
 	Gauge(string, float64, []string, float64) error
 	Count(string, int64, []string, float64) error
+	io.Closer
 }
 
 // Goforit is the main interface for the library to check if flags enabled, refresh flags
@@ -87,7 +89,8 @@ type goforit struct {
 
 	defaultTags *fastTags
 
-	stats StatsdClient
+	stats            StatsdClient
+	shouldCloseStats bool
 
 	// Last time we alerted that flags may be out of date
 	lastAssertMtx sync.Mutex
@@ -158,6 +161,14 @@ type optionFunc func(g *goforit)
 
 func (o optionFunc) apply(g *goforit) {
 	o(g)
+}
+
+// WithOwnedStats instructs the returned Goforit instance to call
+// Close() on its stats client when Goforit is closed.
+func WithOwnedStats(isOwned bool) Option {
+	return optionFunc(func(g *goforit) {
+		g.shouldCloseStats = isOwned
+	})
 }
 
 // Logger uses the supplied function to log errors. By default, errors are
@@ -420,6 +431,10 @@ func (g *goforit) Close() error {
 	g.flags.Close()
 	g.stalenessTicker.Stop()
 	g.done()
+
+	if g.shouldCloseStats && g.stats != nil {
+		_ = g.stats.Close()
+	}
 
 	return nil
 }
