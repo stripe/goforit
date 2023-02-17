@@ -99,11 +99,18 @@ type goforit struct {
 	printf    printFunc
 	evalCB    evaluationCallback
 	deletedCB evaluationCallback
+
+	isClosed atomic.Bool
+	done     func()
+	// for use in our background ticker goroutines
+	backgroundCtx context.Context
 }
 
 const DefaultInterval = 30 * time.Second
 
 func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
+	ctx, done := context.WithCancel(context.Background())
+
 	g := &goforit{
 		flags:           newFastFlags(),
 		defaultTags:     newFastTags(),
@@ -111,12 +118,20 @@ func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
 		stalenessTicker: time.NewTicker(stalenessTickerInterval),
 		rnd:             newPooledRandomFloater(),
 		printf:          log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
+		done:            done,
+		backgroundCtx:   ctx,
 	}
 
 	// set an atomic value async rather than check channel inline (which takes a mutex)
 	go func() {
-		for range g.stalenessTicker.C {
-			g.shouldCheckStaleness.Store(true)
+		doneCh := ctx.Done()
+		for {
+			select {
+			case <-doneCh:
+				return
+			case <-g.stalenessTicker.C:
+				g.shouldCheckStaleness.Store(true)
+			}
 		}
 	}()
 
@@ -357,8 +372,14 @@ func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) 
 		g.ticker = ticker
 
 		go func() {
-			for range ticker.C {
-				g.RefreshFlags(backend)
+			doneCh := g.backgroundCtx.Done()
+			for {
+				select {
+				case <-doneCh:
+					return
+				case <-ticker.C:
+					g.RefreshFlags(backend)
+				}
 			}
 		}()
 	}
@@ -387,14 +408,19 @@ func Override(ctx context.Context, name string, value bool) context.Context {
 // Close releases resources held
 // It's still safe to call Enabled()
 func (g *goforit) Close() error {
+	if alreadyClosed := g.isClosed.Swap(true); alreadyClosed {
+		return nil
+	}
+
 	if g.ticker != nil {
 		g.ticker.Stop()
 		g.ticker = nil
-
-		g.flags.Close()
-
-		g.stalenessTicker.Stop()
 	}
+
+	g.flags.Close()
+	g.stalenessTicker.Stop()
+	g.done()
+
 	return nil
 }
 

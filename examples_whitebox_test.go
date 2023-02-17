@@ -15,6 +15,7 @@ func Example() {
 	// See: testdata/flags_example.csv
 	backend := goforit.BackendFromFile("flags.csv")
 	flags := goforit.New(30*time.Second, backend)
+	defer func() { _ = flags.Close() }()
 
 	if flags.Enabled(ctx, "go.sun.mercury", nil) {
 		fmt.Println("The go.sun.mercury feature is enabled for 100% of requests")
