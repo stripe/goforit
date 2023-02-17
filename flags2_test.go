@@ -45,6 +45,11 @@ func TestFlags2Backend(t *testing.T) {
 			Rules: []flags2.Rule2{{HashBy: "_random", Percent: 0.5, Predicates: []flags2.Predicate2{}}},
 		},
 		flags2.Flag2{
+			Name:  "go.sun.money",
+			Seed:  "seed_1",
+			Rules: []flags2.Rule2{{HashBy: "_random", Percent: 0.0, Predicates: []flags2.Predicate2{}}},
+		},
+		flags2.Flag2{
 			Name: "flag5",
 			Seed: "seed_1",
 			Rules: []flags2.Rule2{

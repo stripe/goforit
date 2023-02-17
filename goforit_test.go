@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stripe/goforit/flags2"
 	"go.uber.org/goleak"
 	"io"
 	"log"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/stripe/goforit/clamp"
 	"github.com/stripe/goforit/flags"
-	"github.com/stripe/goforit/flags1"
 )
 
 const ε = .02
@@ -105,7 +105,7 @@ func TestEnabled(t *testing.T) {
 
 	const iterations = 100000
 
-	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
 	g, _ := testGoforit(DefaultInterval, backend, stalenessCheckInterval)
 	defer g.Close()
 
@@ -157,12 +157,12 @@ func (b *dummyBackend) Refresh() ([]flags.Flag, time.Time, error) {
 		return []flags.Flag{}, time.Time{}, nil
 	}
 
-	f, err := os.Open(filepath.Join("testdata", "flags_example.csv"))
+	f, err := os.Open(filepath.Join("testdata", "flags2_example.json"))
 	if err != nil {
 		return nil, time.Time{}, err
 	}
 	defer f.Close()
-	return parseFlagsCSV(f)
+	return parseFlagsJSON2(f)
 }
 
 func TestRefresh(t *testing.T) {
@@ -223,11 +223,11 @@ func TestTryRefresh(t *testing.T) {
 func TestRefreshTicker(t *testing.T) {
 	t.Parallel()
 
-	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
 	g, _ := testGoforit(10*time.Second, backend, stalenessCheckInterval)
 	defer g.Close()
 
-	g.flags.storeForTesting("go.earth.money", flagHolder{flags1.Flag1{"go.earth.money", true, nil}, clamp.MayVary})
+	g.flags.storeForTesting("go.earth.money", flagHolder{flags2.Flag2{"go.earth.money", "seed", nil, false}, clamp.MayVary})
 	g.flags.deleteForTesting("go.stars.money")
 	// Give tickers time to run.
 	time.Sleep(time.Millisecond)
@@ -249,7 +249,6 @@ func BenchmarkEnabled(b *testing.B) {
 		name    string
 		backend Backend
 	}{
-		{"csv", BackendFromFile(filepath.Join("testdata", "flags_example.csv"))},
 		{"json2", BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))},
 	}
 	flags := []struct {
@@ -328,14 +327,59 @@ func BenchmarkEnabledWithArgs(b *testing.B) {
 type dummyDefaultFlagsBackend struct{}
 
 func (b *dummyDefaultFlagsBackend) Refresh() ([]flags.Flag, time.Time, error) {
-	testFlag := flags1.Flag1{
+	testFlag := flags2.Flag2{
 		"test",
-		true,
-		[]flags1.RuleInfo{
-			{&flags1.MatchListRule{"host_name", []string{"apibox_789"}}, flags.RuleOff, flags.RuleContinue},
-			{&flags1.MatchListRule{"host_name", []string{"apibox_123", "apibox_456"}}, flags.RuleOn, flags.RuleContinue},
-			{&flags1.RateRule{1, []string{"cluster", "db"}}, flags.RuleOn, flags.RuleOff},
+		"seed",
+		[]flags2.Rule2{
+			{
+				HashBy:  flags2.HashByRandom,
+				Percent: flags2.PercentOff,
+				Predicates: []flags2.Predicate2{
+					{
+						Attribute: "host_name",
+						Operation: flags2.OpIn,
+						Values: map[string]bool{
+							"apibox_789": true,
+						},
+					},
+				},
+			},
+			{
+				HashBy:  flags2.HashByRandom,
+				Percent: flags2.PercentOn,
+				Predicates: []flags2.Predicate2{
+					{
+						Attribute: "host_name",
+						Operation: flags2.OpIn,
+						Values: map[string]bool{
+							"apibox_123": true,
+							"apibox_456": true,
+						},
+					},
+				},
+			},
+			{
+				HashBy:  flags2.HashByRandom,
+				Percent: flags2.PercentOn,
+				Predicates: []flags2.Predicate2{
+					{
+						Attribute: "cluster",
+						Operation: flags2.OpIn,
+						Values: map[string]bool{
+							"northwest-01": true,
+						},
+					},
+					{
+						Attribute: "db",
+						Operation: flags2.OpIn,
+						Values: map[string]bool{
+							"mongo-prod": true,
+						},
+					},
+				},
+			},
 		},
+		false,
 	}
 	return []flags.Flag{testFlag}, time.Time{}, nil
 }
@@ -343,9 +387,8 @@ func (b *dummyDefaultFlagsBackend) Refresh() ([]flags.Flag, time.Time, error) {
 func TestDefaultTags(t *testing.T) {
 	t.Parallel()
 
-	const iterations = 100000
-	g, buf := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{}, stalenessCheckInterval)
-	defer g.Close()
+	g, _ := testGoforit(DefaultInterval, &dummyDefaultFlagsBackend{}, stalenessCheckInterval)
+	defer func() { _ = g.Close() }()
 
 	// if no properties passed, and no default tags added, then should return false
 	assert.False(t, g.Enabled(context.Background(), "test", nil))
@@ -366,21 +409,13 @@ func TestDefaultTags(t *testing.T) {
 	// test combination of global tag and local props
 	g.AddDefaultTags(map[string]string{"cluster": "northwest-01"})
 	assert.True(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-prod"}))
-
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	assert.True(t, len(lines) == 6)
-	for i, line := range lines {
-		if i%2 == 1 {
-			assert.Contains(t, line, "No property")
-			assert.Contains(t, line, "in properties map or default tags")
-		}
-	}
+	assert.False(t, g.Enabled(context.Background(), "test", map[string]string{"host_name": "apibox_001", "db": "mongo-qa"}))
 }
 
 func TestOverride(t *testing.T) {
 	t.Parallel()
 
-	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
 	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 	g.RefreshFlags(backend)
@@ -468,10 +503,15 @@ type dummyAgeBackend struct {
 }
 
 func (b *dummyAgeBackend) Refresh() ([]flags.Flag, time.Time, error) {
-	testFlag := flags1.Flag1{
-		"go.sun.money",
-		true,
-		[]flags1.RuleInfo{},
+	testFlag := flags2.Flag2{
+		Name: "go.sun.money",
+		Seed: "seed",
+		Rules: []flags2.Rule2{
+			{
+				HashBy:  flags2.HashByRandom,
+				Percent: flags2.PercentOn,
+			},
+		},
 	}
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
@@ -643,7 +683,7 @@ func TestEvaluationCallback(t *testing.T) {
 	t.Parallel()
 
 	evaluated := map[flagStatus]int{}
-	backend := BackendFromFile(filepath.Join("testdata", "flags_example.csv"))
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
 	g := New(stalenessCheckInterval,
 		backend,
 		EvaluationCallback(func(flag string, active bool) {

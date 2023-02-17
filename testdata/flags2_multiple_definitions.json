@@ -2,6 +2,14 @@
   "version": 1,
   "flags": [
     {
+      "name": "go.sun.money",
+      "_id:": "ff_6",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "_random", "percent": 0.5, "predicates": []}
+      ]
+    },
+    {
       "name": "off_flag",
       "_id": "ff_1",
       "seed": "seed_1",
@@ -16,19 +24,11 @@
       ]
     },
     {
-      "name": "go.stars.money",
-      "_id:": "ff_3",
-      "seed": "seed_1",
-      "rules": [
-        {"hash_by": "_random", "percent": 0.5, "predicates": []}
-      ]
-    },
-    {
       "name": "go.sun.money",
       "_id:": "ff_6",
       "seed": "seed_1",
       "rules": [
-        {"hash_by": "_random", "percent": 0.0, "predicates": []}
+        {"hash_by": "_random", "percent": 0.7, "predicates": []}
       ]
     },
     {
