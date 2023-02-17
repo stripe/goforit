@@ -131,7 +131,7 @@ func TestFlags2AcceptanceEndToEnd(t *testing.T) {
 
 	path := filepath.Join("testdata", "flags2_acceptance.json")
 	backend := BackendFromJSONFile2(path)
-	g, _ := testGoforit(10*time.Millisecond, backend, enabledTickerInterval)
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
 	defer g.Close()
 
 	flags2AcceptanceTests(t, func(t *testing.T, flagname string, flag flags2.Flag2, properties map[string]string, expected bool, msg string) {

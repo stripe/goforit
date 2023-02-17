@@ -115,7 +115,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	const lastValue = 0.7
 
 	backend := BackendFromFile(filepath.Join("testdata", "flags_multiple_definitions.csv"))
-	g, _ := testGoforit(0, backend, enabledTickerInterval)
+	g, _ := testGoforit(0, backend, stalenessCheckInterval)
 	g.RefreshFlags(backend)
 
 	flagHolder, ok := g.flags.Get(repeatedFlag)

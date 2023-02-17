@@ -41,39 +41,17 @@ func (ff *fastFlags) Update(refreshedFlags []flags.Flag, enabledTickerInterval t
 	ff.writerLock.Lock()
 	defer ff.writerLock.Unlock()
 
-	newHolder := func(flag flags.Flag, ticker *time.Ticker) *flagHolder {
-		if ticker == nil {
-			ticker = time.NewTicker(enabledTickerInterval)
-		}
-
-		return &flagHolder{
-			flag:          flag,
-			clamp:         flag.Clamp(),
-			enabledTicker: ticker,
-		}
-	}
-
 	oldFlags := ff.load()
 	newFlags := make(flagMap)
 	for _, flag := range refreshedFlags {
 		name := flag.FlagName()
-		if oldFlagHolder, ok := oldFlags[name]; ok {
-			if oldFlagHolder.flag.Equal(flag) {
-				newFlags[name] = oldFlagHolder
-			} else {
-				newFlags[name] = newHolder(flag, oldFlagHolder.enabledTicker)
-			}
+		var holder *flagHolder
+		if oldFlagHolder, ok := oldFlags[name]; ok && oldFlagHolder.flag.Equal(flag) {
+			holder = oldFlagHolder
 		} else {
-			newFlags[name] = newHolder(flag, nil)
+			holder = &flagHolder{flag, flag.Clamp()}
 		}
-	}
-
-	// we've built the newFlags, now iterate over the list of old flags:
-	// stop the ticker for any oldFlags that aren't in the new map
-	for name, oldFlagHolder := range oldFlags {
-		if _, found := newFlags[name]; !found {
-			oldFlagHolder.enabledTicker.Stop()
-		}
+		newFlags[name] = holder
 	}
 
 	ff.flags.Store(newFlags)
@@ -110,11 +88,4 @@ func (ff *fastFlags) deleteForTesting(keyToDelete string) {
 }
 
 func (ff *fastFlags) Close() {
-	ff.writerLock.Lock()
-	defer ff.writerLock.Unlock()
-
-	flags := ff.load()
-	for _, flag := range flags {
-		flag.enabledTicker.Stop()
-	}
 }
