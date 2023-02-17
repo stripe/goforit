@@ -1,6 +1,6 @@
 module github.com/stripe/goforit
 
-go 1.17
+go 1.19
 
 require (
 	github.com/DataDog/datadog-go v4.8.3+incompatible
