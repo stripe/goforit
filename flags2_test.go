@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/stripe/goforit/clamp"
-	"github.com/stripe/goforit/flags"
 	"github.com/stripe/goforit/flags2"
 )
 
@@ -32,24 +31,24 @@ type FlagAcceptance2 struct {
 func TestFlags2Backend(t *testing.T) {
 	t.Parallel()
 
-	expectedFlags := []flags.Flag{
-		flags2.Flag2{Name: "off_flag", Seed: "seed_1", Rules: []flags2.Rule2{}},
-		flags2.Flag2{
+	expectedFlags := []*flags2.Flag2{
+		{Name: "off_flag", Seed: "seed_1", Rules: []flags2.Rule2{}},
+		{
 			Name:  "go.moon.mercury",
 			Seed:  "seed_1",
 			Rules: []flags2.Rule2{{HashBy: "_random", Percent: 1.0, Predicates: []flags2.Predicate2{}}},
 		},
-		flags2.Flag2{
+		{
 			Name:  "go.stars.money",
 			Seed:  "seed_1",
 			Rules: []flags2.Rule2{{HashBy: "_random", Percent: 0.5, Predicates: []flags2.Predicate2{}}},
 		},
-		flags2.Flag2{
+		{
 			Name:  "go.sun.money",
 			Seed:  "seed_1",
 			Rules: []flags2.Rule2{{HashBy: "_random", Percent: 0.0, Predicates: []flags2.Predicate2{}}},
 		},
-		flags2.Flag2{
+		{
 			Name: "flag5",
 			Seed: "seed_1",
 			Rules: []flags2.Rule2{
@@ -83,7 +82,7 @@ func flags2AcceptanceTests(t *testing.T, f func(t *testing.T, flagname string, f
 	err = json.Unmarshal(buf, &acceptanceData)
 	require.NoError(t, err)
 
-	flags := map[string]flags2.Flag2{}
+	flags := make(map[string]*flags2.Flag2)
 	for _, f := range acceptanceData.Flags {
 		flags[f.Name] = f
 	}
@@ -103,7 +102,7 @@ func flags2AcceptanceTests(t *testing.T, f func(t *testing.T, flagname string, f
 			}
 
 			msg := fmt.Sprintf("%s %v", dup.Flag, dup.Attrs)
-			f(t, dup.Flag, flags[dup.Flag], properties, dup.Expected, msg)
+			f(t, dup.Flag, *flags[dup.Flag], properties, dup.Expected, msg)
 		})
 	}
 }
@@ -164,9 +163,10 @@ func TestFlags2Reserialize(t *testing.T) {
 	flags, _, err := backend.Refresh()
 	require.NoError(t, err)
 
-	flagsOut := make([]flags2.Flag2, len(flags))
+	flagsOut := make([]*flags2.Flag2, len(flags))
 	for i := 0; i < len(flags); i++ {
-		flagsOut[i] = flags[i].(flags2.Flag2)
+		copied := *flags[i]
+		flagsOut[i] = &copied
 	}
 
 	root := flags2.JSONFormat2{

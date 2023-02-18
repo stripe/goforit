@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/stripe/goforit/flags"
 )
 
 func TestParseFlagsJSON(t *testing.T) {
@@ -19,20 +17,20 @@ func TestParseFlagsJSON(t *testing.T) {
 	type testcase struct {
 		Name     string
 		Filename string
-		Expected []flags.Flag
+		Expected []*flags2.Flag2
 	}
 
 	cases := []testcase{
 		{
 			Name:     "BasicExample",
 			Filename: filepath.Join("testdata", "flags2_example.json"),
-			Expected: []flags.Flag{
-				flags2.Flag2{
+			Expected: []*flags2.Flag2{
+				{
 					Name:  "off_flag",
 					Seed:  "seed_1",
 					Rules: []flags2.Rule2{},
 				},
-				flags2.Flag2{
+				{
 					Name: "go.moon.mercury",
 					Seed: "seed_1",
 					Rules: []flags2.Rule2{
@@ -43,7 +41,7 @@ func TestParseFlagsJSON(t *testing.T) {
 						},
 					},
 				},
-				flags2.Flag2{
+				{
 					Name: "go.stars.money",
 					Seed: "seed_1",
 					Rules: []flags2.Rule2{
@@ -54,7 +52,7 @@ func TestParseFlagsJSON(t *testing.T) {
 						},
 					},
 				},
-				flags2.Flag2{
+				{
 					Name: "go.sun.money",
 					Seed: "seed_1",
 					Rules: []flags2.Rule2{
@@ -65,7 +63,7 @@ func TestParseFlagsJSON(t *testing.T) {
 						},
 					},
 				},
-				flags2.Flag2{
+				{
 					Name: "flag5",
 					Seed: "seed_1",
 					Rules: []flags2.Rule2{
@@ -128,7 +126,7 @@ func TestMultipleDefinitions(t *testing.T) {
 	flagHolder, ok := g.flags.Get(repeatedFlag)
 	assert.True(t, ok)
 
-	expected := flags2.Flag2{
+	expected := &flags2.Flag2{
 		Name: repeatedFlag,
 		Seed: "seed_1",
 		Rules: []flags2.Rule2{

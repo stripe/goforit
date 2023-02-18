@@ -7,21 +7,20 @@ import (
 	"os"
 	"time"
 
-	"github.com/stripe/goforit/flags"
 	"github.com/stripe/goforit/flags2"
 )
 
 type Backend interface {
 	// Refresh returns a new set of flags.
 	// It also returns the age of these flags, or an empty time if no age is known.
-	Refresh() ([]flags.Flag, time.Time, error)
+	Refresh() ([]*flags2.Flag2, time.Time, error)
 }
 
 type jsonFileBackend2 struct {
 	filename string
 }
 
-func readFile(file string, parse func(io.Reader) ([]flags.Flag, time.Time, error)) ([]flags.Flag, time.Time, error) {
+func readFile(file string, parse func(io.Reader) ([]*flags2.Flag2, time.Time, error)) ([]*flags2.Flag2, time.Time, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -31,7 +30,7 @@ func readFile(file string, parse func(io.Reader) ([]flags.Flag, time.Time, error
 	return parse(bufio.NewReaderSize(f, 128*1024))
 }
 
-func (b jsonFileBackend2) Refresh() ([]flags.Flag, time.Time, error) {
+func (b jsonFileBackend2) Refresh() ([]*flags2.Flag2, time.Time, error) {
 	flags, updated, err := readFile(b.filename, parseFlagsJSON2)
 	if updated != time.Unix(0, 0) {
 		return flags, updated, err
@@ -44,7 +43,7 @@ func (b jsonFileBackend2) Refresh() ([]flags.Flag, time.Time, error) {
 	return flags, fileInfo.ModTime(), nil
 }
 
-func parseFlagsJSON2(r io.Reader) ([]flags.Flag, time.Time, error) {
+func parseFlagsJSON2(r io.Reader) ([]*flags2.Flag2, time.Time, error) {
 	dec := json.NewDecoder(r)
 	var v flags2.JSONFormat2
 	err := dec.Decode(&v)
@@ -52,7 +51,7 @@ func parseFlagsJSON2(r io.Reader) ([]flags.Flag, time.Time, error) {
 		return nil, time.Time{}, err
 	}
 
-	flags := make([]flags.Flag, len(v.Flags))
+	flags := make([]*flags2.Flag2, len(v.Flags))
 	for i, f := range v.Flags {
 		flags[i] = f
 	}

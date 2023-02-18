@@ -1,7 +1,7 @@
 package goforit
 
 import (
-	"github.com/stripe/goforit/flags"
+	"github.com/stripe/goforit/flags2"
 	"sync"
 	"sync/atomic"
 )
@@ -27,15 +27,15 @@ func (ff *fastFlags) load() flagMap {
 	return ff.flags.Load().(flagMap)
 }
 
-func (ff *fastFlags) Get(key string) (flagHolder, bool) {
+func (ff *fastFlags) Get(key string) (*flagHolder, bool) {
 	if f, ok := ff.flags.Load().(flagMap)[key]; ok && f != nil {
-		return *f, ok
+		return f, ok
 	} else {
-		return flagHolder{}, false
+		return nil, false
 	}
 }
 
-func (ff *fastFlags) Update(refreshedFlags []flags.Flag) {
+func (ff *fastFlags) Update(refreshedFlags []*flags2.Flag2) {
 	ff.writerLock.Lock()
 	defer ff.writerLock.Unlock()
 
@@ -47,7 +47,10 @@ func (ff *fastFlags) Update(refreshedFlags []flags.Flag) {
 		if oldFlagHolder, ok := oldFlags[name]; ok && oldFlagHolder.flag.Equal(flag) {
 			holder = oldFlagHolder
 		} else {
-			holder = &flagHolder{flag, flag.Clamp()}
+			holder = &flagHolder{
+				flag:  flag,
+				clamp: flag.Clamp(),
+			}
 		}
 		newFlags[name] = holder
 	}
@@ -55,7 +58,7 @@ func (ff *fastFlags) Update(refreshedFlags []flags.Flag) {
 	ff.flags.Store(newFlags)
 }
 
-func (ff *fastFlags) storeForTesting(key string, value flagHolder) {
+func (ff *fastFlags) storeForTesting(key string, value *flagHolder) {
 	ff.writerLock.Lock()
 	defer ff.writerLock.Unlock()
 
@@ -65,7 +68,7 @@ func (ff *fastFlags) storeForTesting(key string, value flagHolder) {
 		newFlags[k] = v
 	}
 
-	newFlags[key] = &value
+	newFlags[key] = value
 
 	ff.flags.Store(newFlags)
 }
