@@ -47,8 +47,8 @@ type Flag2 struct {
 }
 
 type JSONFormat2 struct {
-	Flags   []Flag2 `json:"flags"`
-	Updated float64 `json:"updated"`
+	Flags   []*Flag2 `json:"flags"`
+	Updated float64  `json:"updated"`
 }
 
 type predicate2Json struct {
@@ -149,12 +149,7 @@ func (r Rule2) equal(o Rule2) bool {
 	return true
 }
 
-func (f Flag2) Equal(other flags.Flag) bool {
-	o, ok := other.(Flag2)
-	if !ok {
-		return false
-	}
-
+func (f Flag2) Equal(o *Flag2) bool {
 	if f.Name != o.Name || f.Seed != o.Seed || len(f.Rules) != len(o.Rules) {
 		return false
 	}

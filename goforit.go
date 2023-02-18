@@ -2,6 +2,7 @@ package goforit
 
 import (
 	"context"
+	"github.com/stripe/goforit/flags2"
 	"io"
 	"log"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"github.com/DataDog/datadog-go/statsd"
 
 	"github.com/stripe/goforit/clamp"
-	"github.com/stripe/goforit/flags"
 	"github.com/stripe/goforit/internal/safepool"
 )
 
@@ -24,12 +24,18 @@ const (
 	stalenessCheckInterval = 10 * time.Second
 )
 
-const lastRefreshMetricName = "goforit.flags.last_refresh_s"
+const (
+	lastRefreshMetricName          = "goforit.flags.last_refresh_s"
+	reportCountsScannedMetricName  = "goforit.report-counts.scanned"
+	reportCountsReportedMetricName = "goforit.report-counts.reported"
+	reportCountsDurationMetricName = "goforit.report-counts.duration"
+)
 
 // StatsdClient is the set of methods required to emit metrics to statsd, for
 // customizing behavior or mocking.
 type StatsdClient interface {
 	Histogram(string, float64, []string, float64) error
+	TimeInMilliseconds(name string, milli float64, tags []string, rate float64) error
 	Gauge(string, float64, []string, float64) error
 	Count(string, int64, []string, float64) error
 	io.Closer
@@ -43,6 +49,7 @@ type Goforit interface {
 	TryRefreshFlags(backend Backend) error
 	SetStalenessThreshold(threshold time.Duration)
 	AddDefaultTags(tags map[string]string)
+	ReportCounts(callback func(name string, total, enabled uint64))
 	Close() error
 }
 
@@ -101,6 +108,8 @@ type goforit struct {
 	done     func()
 	// for use in our background ticker goroutines
 	backgroundCtx context.Context
+
+	reportMu sync.Mutex
 }
 
 const DefaultInterval = 30 * time.Second
@@ -203,8 +212,10 @@ func DeletedCallback(cb evaluationCallback) Option {
 }
 
 type flagHolder struct {
-	flag  flags.Flag
-	clamp clamp.Clamp
+	flag          *flags2.Flag2
+	disabledCount atomic.Uint64
+	enabledCount  atomic.Uint64
+	clamp         clamp.Clamp
 }
 
 func (g *goforit) getStalenessThreshold() time.Duration {
@@ -278,7 +289,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 		defer func() { g.evalCB(name, enabled) }()
 	}
 	if g.deletedCB != nil {
-		if df, ok := flag.flag.(flags.DeletableFlag); ok && df.IsDeleted() {
+		if flag != nil && flag.flag.IsDeleted() {
 			defer func() { g.deletedCB(name, enabled) }()
 		}
 	}
@@ -300,15 +311,25 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	switch flag.clamp {
 	case clamp.AlwaysOff:
 		enabled = false
+		flag.disabledCount.Add(1)
 	case clamp.AlwaysOn:
 		enabled = true
+		flag.enabledCount.Add(1)
 	default:
 		var err error
 		enabled, err = flag.flag.Enabled(g.rnd, properties, g.defaultTags.Load())
 		if err != nil {
 			g.printf(err.Error())
 		}
+		// move setting these counts into the switch arms so that they can
+		// be predicted better for the alwaysOn/alwaysOff cases.
+		if enabled {
+			flag.enabledCount.Add(1)
+		} else {
+			flag.disabledCount.Add(1)
+		}
 	}
+
 	return
 }
 
@@ -422,6 +443,34 @@ func (g *goforit) Close() error {
 	}
 
 	return nil
+}
+
+func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64)) {
+	g.reportMu.Lock()
+	defer g.reportMu.Unlock()
+
+	start := time.Now()
+	scanned := int64(0)
+	reported := int64(0)
+
+	for name, fh := range g.flags.load() {
+		scanned++
+		if fh.disabledCount.Load() == 0 && fh.enabledCount.Load() == 0 {
+			continue
+		}
+
+		disabled := fh.disabledCount.Swap(0)
+		enabled := fh.enabledCount.Swap(0)
+		callback(name, disabled+enabled, enabled)
+		reported++
+	}
+
+	duration := time.Now().Sub(start)
+	if g.stats != nil {
+		_ = g.stats.Gauge(reportCountsScannedMetricName, float64(scanned), nil, 1.0)
+		_ = g.stats.Gauge(reportCountsReportedMetricName, float64(reported), nil, 1.0)
+		_ = g.stats.TimeInMilliseconds(reportCountsDurationMetricName, duration.Seconds()*1000, nil, 1.0)
+	}
 }
 
 // for the interface compatability static check

@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/stripe/goforit/flags2"
-	"go.uber.org/goleak"
 	"io"
 	"log"
 	"math"
@@ -17,25 +15,47 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 
 	"github.com/stripe/goforit/clamp"
-	"github.com/stripe/goforit/flags"
+	"github.com/stripe/goforit/flags2"
 )
 
 const ε = .02
 
 type mockStatsd struct {
-	lock            sync.RWMutex
-	histogramValues map[string][]float64
+	lock       sync.Mutex
+	histograms map[string][]float64
+	durations  map[string][]time.Duration
+	gauges     map[string]float64
+}
+
+func (m *mockStatsd) TimeInMilliseconds(name string, milli float64, tags []string, rate float64) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if m.durations == nil {
+		m.durations = make(map[string][]time.Duration)
+	}
+	m.durations[name] = append(m.durations[name], time.Duration(milli*float64(time.Millisecond)))
+	return nil
 }
 
 func (m *mockStatsd) Close() error {
 	return nil
 }
 
-func (m *mockStatsd) Gauge(string, float64, []string, float64) error {
+func (m *mockStatsd) Gauge(name string, val float64, _ []string, _ float64) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if m.gauges == nil {
+		m.gauges = make(map[string]float64)
+	}
+	m.gauges[name] = val
 	return nil
 }
 
@@ -46,22 +66,43 @@ func (m *mockStatsd) Count(string, int64, []string, float64) error {
 func (m *mockStatsd) Histogram(name string, value float64, tags []string, rate float64) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	if m.histogramValues == nil {
-		m.histogramValues = make(map[string][]float64)
+	if m.histograms == nil {
+		m.histograms = make(map[string][]float64)
 	}
-	m.histogramValues[name] = append(m.histogramValues[name], value)
+	m.histograms[name] = append(m.histograms[name], value)
 	return nil
 }
 
 func (m *mockStatsd) getHistogramValues(name string) []float64 {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	s := make([]float64, len(m.histogramValues[name]))
-	copy(s, m.histogramValues[name])
+	s := make([]float64, len(m.histograms[name]))
+	copy(s, m.histograms[name])
 	return s
 }
 
+func (m *mockStatsd) getDurationValues(name string) []time.Duration {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	s := make([]time.Duration, len(m.durations[name]))
+	copy(s, m.durations[name])
+	return s
+}
+
+func (m *mockStatsd) getGaugeValue(name string) float64 {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	return m.gauges[name]
+}
+
 var _ StatsdClient = &mockStatsd{}
+
+func TestFlagHolderSize(t *testing.T) {
+	const cachelineSize = 64
+	const expectedSize = cachelineSize / 2
+	assert.Equal(t, expectedSize, int(unsafe.Sizeof(flagHolder{})))
+
+}
 
 type logBuffer struct {
 	buf bytes.Buffer
@@ -107,7 +148,6 @@ func TestEnabled(t *testing.T) {
 
 	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
 	g, _ := testGoforit(DefaultInterval, backend, stalenessCheckInterval)
-	defer g.Close()
 
 	assert.False(t, g.Enabled(context.Background(), "go.sun.money", nil))
 	assert.True(t, g.Enabled(context.Background(), "go.moon.mercury", nil))
@@ -125,19 +165,10 @@ func TestEnabled(t *testing.T) {
 	actualRate := float64(count) / float64(iterations)
 
 	assert.InEpsilon(t, 0.5, actualRate, ε)
-}
 
-type (
-	OnRule  struct{}
-	OffRule struct{}
-)
-
-func (r *OnRule) Handle(rnd *pooledRandFloater, flag string, props map[string]string) (bool, error) {
-	return true, nil
-}
-
-func (r *OffRule) Handle(rnd *pooledRandFloater, flag string, props map[string]string) (bool, error) {
-	return false, nil
+	// should be able to be called twice without error, hanging, or panic
+	assert.NoError(t, g.Close())
+	assert.NoError(t, g.Close())
 }
 
 // dummyBackend lets us test the RefreshFlags
@@ -148,13 +179,13 @@ type dummyBackend struct {
 	refreshedCount int32 // read atomically
 }
 
-func (b *dummyBackend) Refresh() ([]flags.Flag, time.Time, error) {
+func (b *dummyBackend) Refresh() ([]*flags2.Flag2, time.Time, error) {
 	defer func() {
 		atomic.AddInt32(&b.refreshedCount, 1)
 	}()
 
 	if atomic.LoadInt32(&b.refreshedCount) == 0 {
-		return []flags.Flag{}, time.Time{}, nil
+		return []*flags2.Flag2{}, time.Time{}, nil
 	}
 
 	f, err := os.Open(filepath.Join("testdata", "flags2_example.json"))
@@ -205,8 +236,8 @@ func TestNonExistent(t *testing.T) {
 // errorBackend always returns an error for refreshes.
 type errorBackend struct{}
 
-func (e *errorBackend) Refresh() ([]flags.Flag, time.Time, error) {
-	return []flags.Flag{}, time.Time{}, errors.New("read failed")
+func (e *errorBackend) Refresh() ([]*flags2.Flag2, time.Time, error) {
+	return []*flags2.Flag2{}, time.Time{}, errors.New("read failed")
 }
 
 func TestTryRefresh(t *testing.T) {
@@ -227,7 +258,10 @@ func TestRefreshTicker(t *testing.T) {
 	g, _ := testGoforit(10*time.Second, backend, stalenessCheckInterval)
 	defer g.Close()
 
-	g.flags.storeForTesting("go.earth.money", flagHolder{flags2.Flag2{"go.earth.money", "seed", nil, false}, clamp.MayVary})
+	g.flags.storeForTesting("go.earth.money", &flagHolder{
+		flag:  &flags2.Flag2{"go.earth.money", "seed", nil, false},
+		clamp: clamp.MayVary,
+	})
 	g.flags.deleteForTesting("go.stars.money")
 	// Give tickers time to run.
 	time.Sleep(time.Millisecond)
@@ -326,8 +360,8 @@ func BenchmarkEnabledWithArgs(b *testing.B) {
 
 type dummyDefaultFlagsBackend struct{}
 
-func (b *dummyDefaultFlagsBackend) Refresh() ([]flags.Flag, time.Time, error) {
-	testFlag := flags2.Flag2{
+func (b *dummyDefaultFlagsBackend) Refresh() ([]*flags2.Flag2, time.Time, error) {
+	testFlag := &flags2.Flag2{
 		"test",
 		"seed",
 		[]flags2.Rule2{
@@ -381,7 +415,7 @@ func (b *dummyDefaultFlagsBackend) Refresh() ([]flags.Flag, time.Time, error) {
 		},
 		false,
 	}
-	return []flags.Flag{testFlag}, time.Time{}, nil
+	return []*flags2.Flag2{testFlag}, time.Time{}, nil
 }
 
 func TestDefaultTags(t *testing.T) {
@@ -502,8 +536,8 @@ type dummyAgeBackend struct {
 	mtx sync.RWMutex
 }
 
-func (b *dummyAgeBackend) Refresh() ([]flags.Flag, time.Time, error) {
-	testFlag := flags2.Flag2{
+func (b *dummyAgeBackend) Refresh() ([]*flags2.Flag2, time.Time, error) {
+	testFlag := &flags2.Flag2{
 		Name: "go.sun.money",
 		Seed: "seed",
 		Rules: []flags2.Rule2{
@@ -515,7 +549,7 @@ func (b *dummyAgeBackend) Refresh() ([]flags.Flag, time.Time, error) {
 	}
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
-	return []flags.Flag{testFlag}, b.t, nil
+	return []*flags2.Flag2{testFlag}, b.t, nil
 }
 
 // Test to see proper monitoring of age of the flags dump
@@ -723,6 +757,50 @@ func TestDeletionCallback(t *testing.T) {
 
 	assert.Equal(t, 1, len(deleted))
 	assert.Equal(t, 2, deleted[flagStatus{"deleted_on_flag", true}])
+}
+
+func TestGoforit_ReportCounts(t *testing.T) {
+	backend := BackendFromJSONFile2(filepath.Join("testdata", "flags2_example.json"))
+	g, _ := testGoforit(10*time.Millisecond, backend, stalenessCheckInterval)
+	defer func() { _ = g.Close() }()
+	g.RefreshFlags(backend)
+
+	ctx := context.Background()
+	assert.True(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.True(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.True(t, g.Enabled(ctx, "go.moon.mercury", nil))
+	assert.False(t, g.Enabled(ctx, "off_flag", nil))
+	assert.False(t, g.Enabled(ctx, "off_flag", nil))
+
+	disabledCounts := make(map[string]uint64)
+	enabledCounts := make(map[string]uint64)
+
+	g.ReportCounts(func(name string, total, enabled uint64) {
+		disabledCounts[name] = total - enabled
+		enabledCounts[name] = enabled
+	})
+
+	expectedDisabledCounts := map[string]uint64{
+		"go.moon.mercury": 0,
+		"off_flag":        2,
+	}
+	expectedEnabledCounts := map[string]uint64{
+		"go.moon.mercury": 3,
+		"off_flag":        0,
+	}
+
+	assert.Equal(t, expectedDisabledCounts, disabledCounts)
+	assert.Equal(t, expectedEnabledCounts, enabledCounts)
+
+	stats := g.stats.(*mockStatsd)
+	// 5 FFs in the test file
+	assert.Equal(t, float64(5), stats.getGaugeValue(reportCountsScannedMetricName))
+	// 2 FFs that were actually tested for in our code
+	assert.Equal(t, float64(2), stats.getGaugeValue(reportCountsReportedMetricName))
+	assert.Equal(t, 1, len(stats.getDurationValues(reportCountsDurationMetricName)))
+	duration := stats.getDurationValues(reportCountsDurationMetricName)[0]
+	// duration should be positive
+	assert.Greater(t, duration, time.Duration(0))
 }
 
 func TestMain(m *testing.M) {
