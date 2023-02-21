@@ -2,7 +2,6 @@ package goforit
 
 import (
 	"context"
-	"github.com/stripe/goforit/flags2"
 	"io"
 	"log"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"github.com/DataDog/datadog-go/statsd"
 
 	"github.com/stripe/goforit/clamp"
+	"github.com/stripe/goforit/flags2"
 	"github.com/stripe/goforit/internal/safepool"
 )
 

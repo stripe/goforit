@@ -97,11 +97,17 @@ func (m *mockStatsd) getGaugeValue(name string) float64 {
 
 var _ StatsdClient = &mockStatsd{}
 
+// TestFlagHolderSize ensures that the struct we use to refer to flags in the
+// Enabled fast path doesn't grow by mistake.  In particular, we do an atomic
+// write to the enabled or disabled Uint64 counter in the flag holder, and we
+// want to ensure that this struct is a divisor of cacheline size.  This
+// ensures that instances don't "straddle" cachelines, resulting in (a) false
+// sharing and (b) needing to load multiple cache-lines in order to check a
+// flag.
 func TestFlagHolderSize(t *testing.T) {
 	const cachelineSize = 64
 	const expectedSize = cachelineSize / 2
 	assert.Equal(t, expectedSize, int(unsafe.Sizeof(flagHolder{})))
-
 }
 
 type logBuffer struct {
