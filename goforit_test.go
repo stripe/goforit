@@ -780,10 +780,12 @@ func TestGoforit_ReportCounts(t *testing.T) {
 
 	disabledCounts := make(map[string]uint64)
 	enabledCounts := make(map[string]uint64)
+	anyAreDeleted := false
 
-	g.ReportCounts(func(name string, total, enabled uint64) {
+	g.ReportCounts(func(name string, total, enabled uint64, isDeleted bool) {
 		disabledCounts[name] = total - enabled
 		enabledCounts[name] = enabled
+		anyAreDeleted = anyAreDeleted || isDeleted
 	})
 
 	expectedDisabledCounts := map[string]uint64{
@@ -797,6 +799,7 @@ func TestGoforit_ReportCounts(t *testing.T) {
 
 	assert.Equal(t, expectedDisabledCounts, disabledCounts)
 	assert.Equal(t, expectedEnabledCounts, enabledCounts)
+	assert.False(t, anyAreDeleted)
 
 	stats := g.stats.(*mockStatsd)
 	// 5 FFs in the test file

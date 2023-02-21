@@ -49,7 +49,7 @@ type Goforit interface {
 	TryRefreshFlags(backend Backend) error
 	SetStalenessThreshold(threshold time.Duration)
 	AddDefaultTags(tags map[string]string)
-	ReportCounts(callback func(name string, total, enabled uint64))
+	ReportCounts(callback func(name string, total, enabled uint64, isDeleted bool))
 	Close() error
 }
 
@@ -445,7 +445,7 @@ func (g *goforit) Close() error {
 	return nil
 }
 
-func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64)) {
+func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64, isDeleted bool)) {
 	g.reportMu.Lock()
 	defer g.reportMu.Unlock()
 
@@ -461,7 +461,7 @@ func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64)
 
 		disabled := fh.disabledCount.Swap(0)
 		enabled := fh.enabledCount.Swap(0)
-		callback(name, disabled+enabled, enabled)
+		callback(name, disabled+enabled, enabled, fh.flag.IsDeleted())
 		reported++
 	}
 
