@@ -88,12 +88,13 @@ func (p *Predicate2) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&raw)
 }
 
-func (f Flag2) FlagName() string {
+func (f *Flag2) FlagName() string {
 	return f.Name
 }
 
-func (f Flag2) Enabled(rnd flags.Rand, properties, defaultTags map[string]string) (bool, error) {
-	for _, rule := range f.Rules {
+func (f *Flag2) Enabled(rnd flags.Rand, properties, defaultTags map[string]string) (bool, error) {
+	for i := range f.Rules {
+		rule := &f.Rules[i]
 		match, err := rule.matches(properties, defaultTags)
 		if err != nil {
 			return false, err
@@ -109,7 +110,7 @@ func (f Flag2) Enabled(rnd flags.Rand, properties, defaultTags map[string]string
 	return false, nil
 }
 
-func (f Flag2) Clamp() clamp.Clamp {
+func (f *Flag2) Clamp() clamp.Clamp {
 	if len(f.Rules) == 0 {
 		return clamp.AlwaysOff
 	}
@@ -123,7 +124,7 @@ func (f Flag2) Clamp() clamp.Clamp {
 	return clamp.MayVary
 }
 
-func (p Predicate2) equal(o Predicate2) bool {
+func (p *Predicate2) equal(o Predicate2) bool {
 	if p.Attribute != o.Attribute || p.Operation != o.Operation || len(p.Values) != len(o.Values) {
 		return false
 	}
@@ -137,7 +138,7 @@ func (p Predicate2) equal(o Predicate2) bool {
 	return true
 }
 
-func (r Rule2) equal(o Rule2) bool {
+func (r *Rule2) equal(o Rule2) bool {
 	if r.HashBy != o.HashBy || r.Percent != o.Percent || len(r.Predicates) != len(o.Predicates) {
 		return false
 	}
@@ -149,7 +150,7 @@ func (r Rule2) equal(o Rule2) bool {
 	return true
 }
 
-func (f Flag2) Equal(o *Flag2) bool {
+func (f *Flag2) Equal(o *Flag2) bool {
 	if f.Name != o.Name || f.Seed != o.Seed || len(f.Rules) != len(o.Rules) {
 		return false
 	}
@@ -161,11 +162,11 @@ func (f Flag2) Equal(o *Flag2) bool {
 	return true
 }
 
-func (f Flag2) IsDeleted() bool {
+func (f *Flag2) IsDeleted() bool {
 	return f.Deleted
 }
 
-func (p Predicate2) matches(properties, defaultTags map[string]string) (bool, error) {
+func (p *Predicate2) matches(properties, defaultTags map[string]string) (bool, error) {
 	val, present := properties[p.Attribute]
 	if !present {
 		val, present = defaultTags[p.Attribute]
@@ -184,7 +185,7 @@ func (p Predicate2) matches(properties, defaultTags map[string]string) (bool, er
 	}
 }
 
-func (r Rule2) matches(properties, defaultTags map[string]string) (bool, error) {
+func (r *Rule2) matches(properties, defaultTags map[string]string) (bool, error) {
 	_, hashPresent := properties[r.HashBy]
 	if !hashPresent {
 		_, hashPresent = defaultTags[r.HashBy]
@@ -194,7 +195,8 @@ func (r Rule2) matches(properties, defaultTags map[string]string) (bool, error) 
 		return false, nil
 	}
 
-	for _, pred := range r.Predicates {
+	for i := range r.Predicates {
+		pred := &r.Predicates[i]
 		match, err := pred.matches(properties, defaultTags)
 		if err != nil {
 			return false, err
@@ -207,7 +209,7 @@ func (r Rule2) matches(properties, defaultTags map[string]string) (bool, error) 
 	return true, nil
 }
 
-func (r Rule2) hashValue(seed, val string) float64 {
+func (r *Rule2) hashValue(seed, val string) float64 {
 	h := sha1.New()
 	h.Write([]byte(seed))
 	h.Write([]byte{'.'})
@@ -218,7 +220,7 @@ func (r Rule2) hashValue(seed, val string) float64 {
 	return float64(ival) / float64(1<<16)
 }
 
-func (r Rule2) evaluate(rnd flags.Rand, seed string, properties, defaultTags map[string]string) (bool, error) {
+func (r *Rule2) evaluate(rnd flags.Rand, seed string, properties, defaultTags map[string]string) (bool, error) {
 	if r.Percent >= PercentOn {
 		return true, nil
 	}
