@@ -455,8 +455,8 @@ func (g *goforit) Close() error {
 
 	if g.shouldCloseStats {
 		_ = g.getStats().Close()
-		g.stats.Store(nil)
 	}
+	g.stats.Store(nil)
 
 	// clear this so that tests work better
 	g.lastFlagRefreshTime.Store(0)
