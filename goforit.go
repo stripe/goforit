@@ -268,7 +268,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 		return
 	}
 	// Don't log too often!
-	if !checkLastAssert || g.logStaleCheck() {
+	if (!checkLastAssert || g.logStaleCheck()) && g.printf != nil {
 		g.printf(msg, staleness, thresh)
 	}
 }
@@ -330,7 +330,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	default:
 		var err error
 		enabled, err = flag.flag.Enabled(g.rnd, properties, g.defaultTags.Load())
-		if err != nil {
+		if err != nil && g.printf != nil {
 			g.printf(err.Error())
 		}
 		// move setting these counts into the switch arms so that they can
@@ -366,7 +366,9 @@ func (g *goforit) TryRefreshFlags(backend Backend) error {
 	refreshedFlags, updated, err := backend.Refresh()
 	if err != nil {
 		_ = g.getStats().Count("goforit.refreshFlags.errors", 1, nil, 1)
-		g.printf("Error refreshing flags: %s", err)
+		if g.printf != nil {
+			g.printf("Error refreshing flags: %s", err)
+		}
 		return err
 	}
 
@@ -466,6 +468,8 @@ func (g *goforit) Close() error {
 	// clear this so that tests work better
 	g.lastFlagRefreshTime.Store(0)
 	g.flags.Close()
+
+	g.printf = nil
 
 	return nil
 }
