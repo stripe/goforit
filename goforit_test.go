@@ -812,6 +812,15 @@ func TestGoforit_ReportCounts(t *testing.T) {
 	assert.Greater(t, duration, time.Duration(0))
 }
 
+func TestDefaultFastFlags(t *testing.T) {
+	ff := &fastFlags{}
+
+	// this shouldn't panic/crash on ff.flags being nil
+	h, found := ff.Get("not_in_map")
+	assert.False(t, found)
+	assert.Nil(t, h)
+}
+
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
