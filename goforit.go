@@ -60,19 +60,24 @@ type (
 
 type pooledRandFloater struct {
 	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
-	rndPool *safepool.RandPool
+	rndPool atomic.Pointer[safepool.RandPool]
 }
 
 func (prf *pooledRandFloater) Float64() float64 {
-	rnd := prf.rndPool.Get()
-	defer prf.rndPool.Put(rnd)
+	pool := prf.rndPool.Load()
+	if pool == nil {
+		pool = prf.init()
+	}
+	rnd := pool.Get()
+	defer pool.Put(rnd)
 	return rnd.Float64()
 }
 
-func newPooledRandomFloater() *pooledRandFloater {
-	return &pooledRandFloater{
-		rndPool: safepool.NewRandPool(),
-	}
+//go:noinline
+func (prf *pooledRandFloater) init() *safepool.RandPool {
+	// CAS so that if we race here, we only write once
+	prf.rndPool.CompareAndSwap(nil, safepool.NewRandPool())
+	return prf.rndPool.Load()
 }
 
 type goforit struct {
@@ -117,7 +122,7 @@ func newWithoutInit(stalenessTickerInterval time.Duration) (*goforit, context.Co
 	g := &goforit{
 		flags:              newFastFlags(),
 		defaultTags:        newFastTags(),
-		rnd:                newPooledRandomFloater(),
+		rnd:                &pooledRandFloater{},
 		ctxOverrideEnabled: true,
 		stalenessTicker:    time.NewTicker(stalenessTickerInterval),
 		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf, //
