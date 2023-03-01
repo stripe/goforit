@@ -39,6 +39,8 @@ func (ff *fastFlags) Update(refreshedFlags []*flags2.Flag2) {
 	ff.writerLock.Lock()
 	defer ff.writerLock.Unlock()
 
+	changed := false
+
 	oldFlags := ff.load()
 	newFlags := make(flagMap)
 	for _, flag := range refreshedFlags {
@@ -47,6 +49,7 @@ func (ff *fastFlags) Update(refreshedFlags []*flags2.Flag2) {
 		if oldFlagHolder, ok := oldFlags[name]; ok && oldFlagHolder.flag.Equal(flag) {
 			holder = oldFlagHolder
 		} else {
+			changed = true
 			holder = &flagHolder{
 				flag:  flag,
 				clamp: flag.Clamp(),
@@ -54,8 +57,18 @@ func (ff *fastFlags) Update(refreshedFlags []*flags2.Flag2) {
 		}
 		newFlags[name] = holder
 	}
+	if len(oldFlags) != len(newFlags) {
+		changed = true
+	}
 
-	ff.flags.Store(newFlags)
+	// avoid storing the new map if it is the same as the old one.
+	// this is largely for tests in gocode which compare if flags
+	// are deeply equal in tests.
+	if changed {
+		ff.flags.Store(newFlags)
+	}
+
+	return
 }
 
 func (ff *fastFlags) storeForTesting(key string, value *flagHolder) {

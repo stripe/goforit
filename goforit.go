@@ -368,7 +368,10 @@ func (g *goforit) TryRefreshFlags(backend Backend) error {
 		g.printf("Error refreshing flags: %s", err)
 		return err
 	}
-	g.lastFlagRefreshTime.Store(time.Now().UnixNano())
+
+	if !g.isClosed.Load() {
+		g.lastFlagRefreshTime.Store(time.Now().UnixNano())
+	}
 
 	g.flags.Update(refreshedFlags)
 
@@ -450,13 +453,18 @@ func (g *goforit) Close() error {
 		g.stalenessTicker = nil
 	}
 
-	g.done()
+	if g.done != nil {
+		g.done()
+		g.done = nil
+	}
 
 	if g.shouldCloseStats {
 		_ = g.getStats().Close()
 		g.stats.Store(nil)
 	}
 
+	// clear this so that tests work better
+	g.lastFlagRefreshTime.Store(0)
 	g.flags.Close()
 
 	return nil
