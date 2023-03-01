@@ -18,10 +18,7 @@ type flagMap map[string]*flagHolder
 
 // newFastFlags returns a new, empty fastFlags instance.
 func newFastFlags() *fastFlags {
-	ff := new(fastFlags)
-	empty := make(flagMap)
-	ff.flags.Store(&empty)
-	return ff
+	return new(fastFlags)
 }
 
 func (ff *fastFlags) load() flagMap {

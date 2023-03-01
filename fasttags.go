@@ -14,10 +14,7 @@ type fastTags struct {
 }
 
 func newFastTags() *fastTags {
-	ft := new(fastTags)
-	empty := make(map[string]string)
-	ft.tags.Store(&empty)
-	return ft
+	return new(fastTags)
 }
 
 // Load returns a map of default tags.  This map MUST only be read, not written to.
