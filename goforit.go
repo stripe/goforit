@@ -83,31 +83,30 @@ type goforit struct {
 	// math.Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
 	rnd                  *pooledRandFloater
 	shouldCheckStaleness atomic.Bool
-	ctxOverrideEnabled   bool
-
-	ticker *time.Ticker
+	ctxOverrideEnabled   bool // immutable
 
 	stalenessThreshold atomic.Pointer[time.Duration]
-
-	// stalenessTicker is used to tell Enabled it should check for staleness.
-	stalenessTicker *time.Ticker
 
 	// Unix time in nanos.
 	lastFlagRefreshTime atomic.Int64
 
 	stats            atomic.Pointer[MetricsClient]
-	shouldCloseStats bool
+	shouldCloseStats bool // immutable
 
-	// Last time we alerted that flags may be out of date
-	lastAssertMtx sync.Mutex
-	lastAssert    time.Time
+	isClosed atomic.Bool
 
 	printf printFunc
 
-	isClosed atomic.Bool
-	done     func()
+	mu sync.Mutex
 
-	reportMu sync.Mutex
+	done func()
+
+	// lastAssert is the last time we alerted that flags may be out of date
+	lastAssert time.Time
+	// refreshTicker is used to tell the backend it should re-load state from disk
+	refreshTicker *time.Ticker
+	// stalenessTicker is used to tell Enabled it should check for staleness.
+	stalenessTicker *time.Ticker
 }
 
 const DefaultInterval = 30 * time.Second
@@ -235,8 +234,8 @@ func (g *goforit) getStalenessThreshold() time.Duration {
 }
 
 func (g *goforit) logStaleCheck() bool {
-	g.lastAssertMtx.Lock()
-	defer g.lastAssertMtx.Unlock()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if time.Since(g.lastAssert) < lastAssertInterval {
 		return false
 	}
@@ -397,7 +396,7 @@ func (g *goforit) init(interval time.Duration, backend Backend, ctx context.Cont
 	g.RefreshFlags(backend)
 	if interval != 0 {
 		ticker := time.NewTicker(interval)
-		g.ticker = ticker
+		g.refreshTicker = ticker
 
 		go func() {
 			for {
@@ -439,9 +438,9 @@ func (g *goforit) Close() error {
 		return nil
 	}
 
-	if g.ticker != nil {
-		g.ticker.Stop()
-		g.ticker = nil
+	if g.refreshTicker != nil {
+		g.refreshTicker.Stop()
+		g.refreshTicker = nil
 	}
 
 	if g.stalenessTicker != nil {
@@ -467,8 +466,8 @@ func (g *goforit) Close() error {
 }
 
 func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64, isDeleted bool)) {
-	g.reportMu.Lock()
-	defer g.reportMu.Unlock()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
 	start := time.Now()
 	scanned := int64(0)

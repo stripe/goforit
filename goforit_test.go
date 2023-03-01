@@ -625,8 +625,8 @@ func TestRefreshCycleMetric(t *testing.T) {
 	// subtract 2 for iters to avoid flakey tests
 	assert.GreaterOrEqual(t, initialMetricCount, iters-antiFlakeSlack)
 
-	// want to stop ticker to simulate Refresh() hanging
-	g.ticker.Stop()
+	// want to stop refreshTicker to simulate Refresh() hanging
+	g.refreshTicker.Stop()
 	time.Sleep(3 * time.Millisecond)
 
 	for i := 0; i < iters; i++ {
@@ -700,7 +700,7 @@ func TestStaleRefresh(t *testing.T) {
 	g.SetStalenessThreshold(50 * time.Millisecond)
 
 	// Simulate stopping refresh
-	g.ticker.Stop()
+	g.refreshTicker.Stop()
 	time.Sleep(100 * time.Millisecond)
 
 	for i := 0; i < 10; i++ {
