@@ -106,15 +106,13 @@ type goforit struct {
 
 	isClosed atomic.Bool
 	done     func()
-	// for use in our background ticker goroutines
-	backgroundCtx context.Context
 
 	reportMu sync.Mutex
 }
 
 const DefaultInterval = 30 * time.Second
 
-func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
+func newWithoutInit(stalenessTickerInterval time.Duration) (*goforit, context.Context) {
 	ctx, done := context.WithCancel(context.Background())
 
 	g := &goforit{
@@ -125,7 +123,6 @@ func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
 		stalenessTicker:    time.NewTicker(stalenessTickerInterval),
 		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf, //
 		done:               done,
-		backgroundCtx:      ctx,
 	}
 
 	// set an atomic value async rather than check channel inline (which takes a mutex)
@@ -141,7 +138,7 @@ func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
 		}
 	}(g.stalenessTicker)
 
-	return g
+	return g, ctx
 }
 
 func (g *goforit) getStats() MetricsClient {
@@ -157,8 +154,8 @@ func (g *goforit) setStats(c MetricsClient) {
 
 // New creates a new goforit
 func New(interval time.Duration, backend Backend, opts ...Option) Goforit {
-	g := newWithoutInit(stalenessCheckInterval)
-	g.init(interval, backend, opts...)
+	g, ctx := newWithoutInit(stalenessCheckInterval)
+	g.init(interval, backend, ctx, opts...)
 	// some users may depend on legacy behavior of creating a
 	// non-dependency-injected statsd client.
 	if g.stats.Load() == nil {
@@ -392,7 +389,7 @@ func (g *goforit) AddDefaultTags(tags map[string]string) {
 // init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
 // Applies passed initialization options to the goforit instance.
-func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) {
+func (g *goforit) init(interval time.Duration, backend Backend, ctx context.Context, opts ...Option) {
 	for _, opt := range opts {
 		opt.apply(g)
 	}
@@ -403,10 +400,9 @@ func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) 
 		g.ticker = ticker
 
 		go func() {
-			doneCh := g.backgroundCtx.Done()
 			for {
 				select {
-				case <-doneCh:
+				case <-ctx.Done():
 					return
 				case <-ticker.C:
 					g.RefreshFlags(backend)

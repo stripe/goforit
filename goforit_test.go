@@ -134,14 +134,14 @@ var _ io.Writer = &logBuffer{}
 // Build a goforit for testing
 // Also return the log output
 func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *logBuffer) {
-	g := newWithoutInit(enabledTickerInterval)
+	g, ctx := newWithoutInit(enabledTickerInterval)
 	g.rnd = newPooledRandomFloater()
 	buf := new(logBuffer)
 	g.printf = log.New(buf, "", 9).Printf
 	g.setStats(&mockStatsd{})
 
 	if backend != nil {
-		g.init(interval, backend, options...)
+		g.init(interval, backend, ctx, options...)
 	}
 
 	return g, buf
