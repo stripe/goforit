@@ -158,6 +158,16 @@
       "testmode_only": false,
       "updated": 1533106796.0,
       "version": "456def"
+    },
+    {
+      "name": "on_flag_with_experiment_rollout_type_rule",
+      "_id": "ff_15",
+      "seed": "seed_1",
+      "rules": [
+        {"hash_by": "token", "percent": 1.0, "predicates": [], "rollout_type": "experiment"}
+      ],
+      "updated": 1533106809.0,
+      "version": "456def"
     }
   ],
   "updated": 1533106800.0,
@@ -229,7 +239,11 @@
     {"flag": "deleted_on_flag", "expected": true, "attrs": {}},
     {"flag": "explicitly_not_deleted_flag", "expected": true, "attrs": {}},
 
-    {"flag": "on_flag_testmode_disabled", "expected": true, "attrs": {}, "message": "always on, testmode_only present only for validation"}
+    {"flag": "on_flag_testmode_disabled", "expected": true, "attrs": {}, "message": "always on, testmode_only present only for validation"},
+
+    {"flag": "on_flag_with_experiment_rollout_type_rule", "expected": true, "attrs": {"token": "x"}, "message": "always on"},
+    {"flag": "on_flag_with_experiment_rollout_type_rule", "expected": true, "attrs": {"token": "x", "foo" : "bar"}, "message": "always on, ignores attrs"},
+    {"flag": "on_flag_with_experiment_rollout_type_rule", "expected": true, "attrs": {}, "message": "always on, ignores attrs, even when there are none"}
   ]
 }
 
