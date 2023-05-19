@@ -125,7 +125,7 @@ func newWithoutInit(stalenessTickerInterval time.Duration) (*goforit, context.Co
 		rnd:                &pooledRandFloater{},
 		ctxOverrideEnabled: true,
 		stalenessTicker:    time.NewTicker(stalenessTickerInterval),
-		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf, //
+		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 		done:               done,
 	}
 
@@ -468,8 +468,6 @@ func (g *goforit) Close() error {
 	// clear this so that tests work better
 	g.lastFlagRefreshTime.Store(0)
 	g.flags.Close()
-
-	g.printf = nil
 
 	return nil
 }
