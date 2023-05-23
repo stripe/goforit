@@ -31,9 +31,9 @@ const (
 	reportCountsDurationMetricName = "goforit.report-counts.duration"
 )
 
-// StatsdClient is the set of methods required to emit metrics to statsd, for
+// MetricsClient is the set of methods required to emit metrics to statsd, for
 // customizing behavior or mocking.
-type StatsdClient interface {
+type MetricsClient interface {
 	Histogram(string, float64, []string, float64) error
 	TimeInMilliseconds(name string, milli float64, tags []string, rate float64) error
 	Gauge(string, float64, []string, float64) error
@@ -60,19 +60,24 @@ type (
 
 type pooledRandFloater struct {
 	// Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
-	rndPool *safepool.RandPool
+	rndPool atomic.Pointer[safepool.RandPool]
 }
 
 func (prf *pooledRandFloater) Float64() float64 {
-	rnd := prf.rndPool.Get()
-	defer prf.rndPool.Put(rnd)
+	pool := prf.rndPool.Load()
+	if pool == nil {
+		pool = prf.init()
+	}
+	rnd := pool.Get()
+	defer pool.Put(rnd)
 	return rnd.Float64()
 }
 
-func newPooledRandomFloater() *pooledRandFloater {
-	return &pooledRandFloater{
-		rndPool: safepool.NewRandPool(),
-	}
+//go:noinline
+func (prf *pooledRandFloater) init() *safepool.RandPool {
+	// CAS so that if we race here, we only write once
+	prf.rndPool.CompareAndSwap(nil, safepool.NewRandPool())
+	return prf.rndPool.Load()
 }
 
 type goforit struct {
@@ -83,76 +88,83 @@ type goforit struct {
 	// math.Rand is not concurrency safe, so keep a pool of them for goroutine-independent use
 	rnd                  *pooledRandFloater
 	shouldCheckStaleness atomic.Bool
-	ctxOverrideEnabled   bool
-
-	ticker *time.Ticker
+	ctxOverrideEnabled   bool // immutable
 
 	stalenessThreshold atomic.Pointer[time.Duration]
-
-	// stalenessTicker is used to tell Enabled it should check for staleness.
-	stalenessTicker *time.Ticker
 
 	// Unix time in nanos.
 	lastFlagRefreshTime atomic.Int64
 
-	stats            StatsdClient
-	shouldCloseStats bool
+	stats            atomic.Pointer[MetricsClient]
+	shouldCloseStats bool // immutable
 
-	// Last time we alerted that flags may be out of date
-	lastAssertMtx sync.Mutex
-	lastAssert    time.Time
+	isClosed atomic.Bool
 
 	printf printFunc
 
-	isClosed atomic.Bool
-	done     func()
-	// for use in our background ticker goroutines
-	backgroundCtx context.Context
+	mu sync.Mutex
 
-	reportMu sync.Mutex
+	done func()
+
+	// lastAssert is the last time we alerted that flags may be out of date
+	lastAssert time.Time
+	// refreshTicker is used to tell the backend it should re-load state from disk
+	refreshTicker *time.Ticker
+	// stalenessTicker is used to tell Enabled it should check for staleness.
+	stalenessTicker *time.Ticker
 }
 
 const DefaultInterval = 30 * time.Second
 
-func newWithoutInit(stalenessTickerInterval time.Duration) *goforit {
+func newWithoutInit(stalenessTickerInterval time.Duration) (*goforit, context.Context) {
 	ctx, done := context.WithCancel(context.Background())
 
 	g := &goforit{
 		flags:              newFastFlags(),
 		defaultTags:        newFastTags(),
-		rnd:                newPooledRandomFloater(),
+		rnd:                &pooledRandFloater{},
 		ctxOverrideEnabled: true,
-		stats:              new(statsd.NoOpClient),
 		stalenessTicker:    time.NewTicker(stalenessTickerInterval),
-		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf, //
+		printf:             log.New(os.Stderr, "[goforit] ", log.LstdFlags).Printf,
 		done:               done,
-		backgroundCtx:      ctx,
 	}
 
 	// set an atomic value async rather than check channel inline (which takes a mutex)
-	go func() {
+	go func(stalenessTicker *time.Ticker) {
 		doneCh := ctx.Done()
 		for {
 			select {
 			case <-doneCh:
 				return
-			case <-g.stalenessTicker.C:
+			case <-stalenessTicker.C:
 				g.shouldCheckStaleness.Store(true)
 			}
 		}
-	}()
+	}(g.stalenessTicker)
 
-	return g
+	return g, ctx
+}
+
+func (g *goforit) getStats() MetricsClient {
+	if stats := g.stats.Load(); stats != nil {
+		return *stats
+	}
+	return noopMetricsClient{}
+}
+
+func (g *goforit) setStats(c MetricsClient) {
+	g.stats.Store(&c)
 }
 
 // New creates a new goforit
 func New(interval time.Duration, backend Backend, opts ...Option) Goforit {
-	g := newWithoutInit(stalenessCheckInterval)
-	g.init(interval, backend, opts...)
+	g, ctx := newWithoutInit(stalenessCheckInterval)
+	g.init(interval, backend, ctx, opts...)
 	// some users may depend on legacy behavior of creating a
 	// non-dependency-injected statsd client.
-	if _, ok := g.stats.(*statsd.NoOpClient); ok {
-		g.stats, _ = statsd.New(DefaultStatsdAddr)
+	if g.stats.Load() == nil {
+		client, _ := statsd.New(DefaultStatsdAddr)
+		g.setStats(client)
 	}
 	return g
 }
@@ -191,9 +203,9 @@ func Logger(printf func(msg string, args ...interface{})) Option {
 
 // Statsd uses the supplied client to emit metrics to. By default, a client is
 // created and configured to emit metrics to DefaultStatsdAddr.
-func Statsd(stats StatsdClient) Option {
+func Statsd(stats MetricsClient) Option {
 	return optionFunc(func(g *goforit) {
-		g.stats = stats
+		g.stats.Store(&stats)
 	})
 }
 
@@ -227,8 +239,8 @@ func (g *goforit) getStalenessThreshold() time.Duration {
 }
 
 func (g *goforit) logStaleCheck() bool {
-	g.lastAssertMtx.Lock()
-	defer g.lastAssertMtx.Unlock()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if time.Since(g.lastAssert) < lastAssertInterval {
 		return false
 	}
@@ -245,7 +257,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 
 	// Report the staleness
 	staleness := time.Since(t)
-	_ = g.stats.Histogram(metric, staleness.Seconds(), nil, metricRate)
+	_ = g.getStats().Histogram(metric, staleness.Seconds(), nil, metricRate)
 
 	// Log if we're old
 	thresh := g.getStalenessThreshold()
@@ -256,7 +268,7 @@ func (g *goforit) staleCheck(t time.Time, metric string, metricRate float64, msg
 		return
 	}
 	// Don't log too often!
-	if !checkLastAssert || g.logStaleCheck() {
+	if (!checkLastAssert || g.logStaleCheck()) && g.printf != nil {
 		g.printf(msg, staleness, thresh)
 	}
 }
@@ -318,7 +330,7 @@ func (g *goforit) Enabled(ctx context.Context, name string, properties map[strin
 	default:
 		var err error
 		enabled, err = flag.flag.Enabled(g.rnd, properties, g.defaultTags.Load())
-		if err != nil {
+		if err != nil && g.printf != nil {
 			g.printf(err.Error())
 		}
 		// move setting these counts into the switch arms so that they can
@@ -353,11 +365,16 @@ func (g *goforit) TryRefreshFlags(backend Backend) error {
 	// Ask the backend for the flags
 	refreshedFlags, updated, err := backend.Refresh()
 	if err != nil {
-		_ = g.stats.Count("goforit.refreshFlags.errors", 1, nil, 1)
-		g.printf("Error refreshing flags: %s", err)
+		_ = g.getStats().Count("goforit.refreshFlags.errors", 1, nil, 1)
+		if g.printf != nil {
+			g.printf("Error refreshing flags: %s", err)
+		}
 		return err
 	}
-	g.lastFlagRefreshTime.Store(time.Now().UnixNano())
+
+	if !g.isClosed.Load() {
+		g.lastFlagRefreshTime.Store(time.Now().UnixNano())
+	}
 
 	g.flags.Update(refreshedFlags)
 
@@ -378,7 +395,7 @@ func (g *goforit) AddDefaultTags(tags map[string]string) {
 // init initializes the flag backend, using the provided refresh function
 // to update the internal cache of flags periodically, at the specified interval.
 // Applies passed initialization options to the goforit instance.
-func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) {
+func (g *goforit) init(interval time.Duration, backend Backend, ctx context.Context, opts ...Option) {
 	for _, opt := range opts {
 		opt.apply(g)
 	}
@@ -386,13 +403,12 @@ func (g *goforit) init(interval time.Duration, backend Backend, opts ...Option) 
 	g.RefreshFlags(backend)
 	if interval != 0 {
 		ticker := time.NewTicker(interval)
-		g.ticker = ticker
+		g.refreshTicker = ticker
 
 		go func() {
-			doneCh := g.backgroundCtx.Done()
 			for {
 				select {
-				case <-doneCh:
+				case <-ctx.Done():
 					return
 				case <-ticker.C:
 					g.RefreshFlags(backend)
@@ -429,25 +445,36 @@ func (g *goforit) Close() error {
 		return nil
 	}
 
-	if g.ticker != nil {
-		g.ticker.Stop()
-		g.ticker = nil
+	if g.refreshTicker != nil {
+		g.refreshTicker.Stop()
+		g.refreshTicker = nil
 	}
 
+	if g.stalenessTicker != nil {
+		g.stalenessTicker.Stop()
+		g.stalenessTicker = nil
+	}
+
+	if g.done != nil {
+		g.done()
+		g.done = nil
+	}
+
+	if g.shouldCloseStats {
+		_ = g.getStats().Close()
+	}
+	g.stats.Store(nil)
+
+	// clear this so that tests work better
+	g.lastFlagRefreshTime.Store(0)
 	g.flags.Close()
-	g.stalenessTicker.Stop()
-	g.done()
-
-	if g.shouldCloseStats && g.stats != nil {
-		_ = g.stats.Close()
-	}
 
 	return nil
 }
 
 func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64, isDeleted bool)) {
-	g.reportMu.Lock()
-	defer g.reportMu.Unlock()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
 	start := time.Now()
 	scanned := int64(0)
@@ -466,11 +493,10 @@ func (g *goforit) ReportCounts(callback func(name string, total, enabled uint64,
 	}
 
 	duration := time.Now().Sub(start)
-	if g.stats != nil {
-		_ = g.stats.Gauge(reportCountsScannedMetricName, float64(scanned), nil, 1.0)
-		_ = g.stats.Gauge(reportCountsReportedMetricName, float64(reported), nil, 1.0)
-		_ = g.stats.TimeInMilliseconds(reportCountsDurationMetricName, duration.Seconds()*1000, nil, 1.0)
-	}
+	stats := g.getStats()
+	_ = stats.Gauge(reportCountsScannedMetricName, float64(scanned), nil, 1.0)
+	_ = stats.Gauge(reportCountsReportedMetricName, float64(reported), nil, 1.0)
+	_ = stats.TimeInMilliseconds(reportCountsDurationMetricName, duration.Seconds()*1000, nil, 1.0)
 }
 
 // for the interface compatability static check

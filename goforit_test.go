@@ -95,7 +95,7 @@ func (m *mockStatsd) getGaugeValue(name string) float64 {
 	return m.gauges[name]
 }
 
-var _ StatsdClient = &mockStatsd{}
+var _ MetricsClient = &mockStatsd{}
 
 // TestFlagHolderSize ensures that the struct we use to refer to flags in the
 // Enabled fast path doesn't grow by mistake.  In particular, we do an atomic
@@ -134,14 +134,14 @@ var _ io.Writer = &logBuffer{}
 // Build a goforit for testing
 // Also return the log output
 func testGoforit(interval time.Duration, backend Backend, enabledTickerInterval time.Duration, options ...Option) (*goforit, *logBuffer) {
-	g := newWithoutInit(enabledTickerInterval)
-	g.rnd = newPooledRandomFloater()
+	g, ctx := newWithoutInit(enabledTickerInterval)
+	g.rnd = &pooledRandFloater{}
 	buf := new(logBuffer)
 	g.printf = log.New(buf, "", 9).Printf
-	g.stats = &mockStatsd{}
+	g.setStats(&mockStatsd{})
 
 	if backend != nil {
-		g.init(interval, backend, options...)
+		g.init(interval, backend, ctx, options...)
 	}
 
 	return g, buf
@@ -578,7 +578,7 @@ func TestCacheFileMetric(t *testing.T) {
 	last := math.Inf(-1)
 	old := 0
 	recent := 0
-	for _, v := range g.stats.(*mockStatsd).getHistogramValues("goforit.flags.cache_file_age_s") {
+	for _, v := range g.getStats().(*mockStatsd).getHistogramValues("goforit.flags.cache_file_age_s") {
 		if v > 300 {
 			// Should be older than last time
 			assert.True(t, v > last)
@@ -618,15 +618,15 @@ func TestRefreshCycleMetric(t *testing.T) {
 		time.Sleep(3 * time.Millisecond)
 	}
 
-	initialMetricCount := len(g.stats.(*mockStatsd).getHistogramValues(lastRefreshMetricName))
+	initialMetricCount := len(g.getStats().(*mockStatsd).getHistogramValues(lastRefreshMetricName))
 
 	const antiFlakeSlack = 10
 
 	// subtract 2 for iters to avoid flakey tests
 	assert.GreaterOrEqual(t, initialMetricCount, iters-antiFlakeSlack)
 
-	// want to stop ticker to simulate Refresh() hanging
-	g.ticker.Stop()
+	// want to stop refreshTicker to simulate Refresh() hanging
+	g.refreshTicker.Stop()
 	time.Sleep(3 * time.Millisecond)
 
 	for i := 0; i < iters; i++ {
@@ -635,7 +635,7 @@ func TestRefreshCycleMetric(t *testing.T) {
 		time.Sleep(3 * time.Millisecond)
 	}
 
-	values := g.stats.(*mockStatsd).getHistogramValues(lastRefreshMetricName)
+	values := g.getStats().(*mockStatsd).getHistogramValues(lastRefreshMetricName)
 	assert.Greater(t, len(values), initialMetricCount)
 	assert.GreaterOrEqual(t, len(values), iters-antiFlakeSlack)
 	// We expect something like: [0, 0.01, 0, 0.01, ..., 0, 0.01, 0.02, 0.03]
@@ -700,7 +700,7 @@ func TestStaleRefresh(t *testing.T) {
 	g.SetStalenessThreshold(50 * time.Millisecond)
 
 	// Simulate stopping refresh
-	g.ticker.Stop()
+	g.refreshTicker.Stop()
 	time.Sleep(100 * time.Millisecond)
 
 	for i := 0; i < 10; i++ {
@@ -801,7 +801,7 @@ func TestGoforit_ReportCounts(t *testing.T) {
 	assert.Equal(t, expectedEnabledCounts, enabledCounts)
 	assert.False(t, anyAreDeleted)
 
-	stats := g.stats.(*mockStatsd)
+	stats := g.getStats().(*mockStatsd)
 	// 5 FFs in the test file
 	assert.Equal(t, float64(5), stats.getGaugeValue(reportCountsScannedMetricName))
 	// 2 FFs that were actually tested for in our code
@@ -810,6 +810,15 @@ func TestGoforit_ReportCounts(t *testing.T) {
 	duration := stats.getDurationValues(reportCountsDurationMetricName)[0]
 	// duration should be positive
 	assert.Greater(t, duration, time.Duration(0))
+}
+
+func TestDefaultFastFlags(t *testing.T) {
+	ff := &fastFlags{}
+
+	// this shouldn't panic/crash on ff.flags being nil
+	h, found := ff.Get("not_in_map")
+	assert.False(t, found)
+	assert.Nil(t, h)
 }
 
 func TestMain(m *testing.M) {
