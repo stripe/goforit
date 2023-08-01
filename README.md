@@ -1,3 +1,7 @@
+> <img src="https://stripe.dev/images/badges/archived.png" width="250">
+>
+> This project is deprecated and is no longer being actively maintained.
+
 [![Build Status](https://travis-ci.org/stripe/goforit.svg?branch=master)](https://travis-ci.org/stripe/goforit)
 [![GoDoc](https://godoc.org/github.com/stripe/goforit?status.svg)](http://godoc.org/github.com/stripe/goforit)
 
@@ -5,7 +9,7 @@ goforit is an experimental, quick-and-dirty client library for feature flags in 
 
 # Backends
 
-Feature flags can be stored in any desired backend. goforit provides a several flatfile implementations out-of-the-box, so feature flags can be defined in a JSON or CSV file. See below for details.    
+Feature flags can be stored in any desired backend. goforit provides a several flatfile implementations out-of-the-box, so feature flags can be defined in a JSON or CSV file. See below for details.
 
 Alternatively, flags can be stored in a key-value store like Consul or Redis.
 
